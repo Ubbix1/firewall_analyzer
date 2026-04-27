@@ -11,10 +11,11 @@ import 'services/app_permission_service.dart';
 import 'services/database_helper.dart';
 import 'services/fcm_registration_service.dart';
 import 'services/notification_service.dart';
+import 'firebase_options.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await NotificationService.initialize();
   debugPrint('Background message: ${message.messageId}');
   _handleFirebaseMessage(message, showLocalNotification: false);
@@ -22,10 +23,10 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // ONLY initialize essential services that don't block the UI thread.
-  // Firebase initialization is usually required here for early push handling.
-  await Firebase.initializeApp();
+  
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   runApp(const FirewallLogAnalyzerApp());
   
@@ -37,9 +38,10 @@ Future<void> _postLaunchSetup() async {
   // Defer notification and background messaging setup to avoid startup congestion.
   await Future<void>.delayed(const Duration(milliseconds: 500));
   Future.microtask(() => NotificationService.initialize());
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  
-  await _setupFirebaseMessaging();
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    await _setupFirebaseMessaging();
+  }
 }
 
 Future<void> _setupFirebaseMessaging() async {
@@ -153,12 +155,17 @@ class _FirewallLogAnalyzerAppState extends State<FirewallLogAnalyzerApp> {
         ),
         useMaterial3: true,
       ),
-      home: AppPermissionGate(
-        child: HomeScreen(
-          themeMode: _themeMode,
-          onThemeModeChanged: _setThemeMode,
-        ),
-      ),
+      home: defaultTargetPlatform == TargetPlatform.android
+          ? AppPermissionGate(
+              child: HomeScreen(
+                themeMode: _themeMode,
+                onThemeModeChanged: _setThemeMode,
+              ),
+            )
+          : HomeScreen(
+              themeMode: _themeMode,
+              onThemeModeChanged: _setThemeMode,
+            ),
     );
   }
 }

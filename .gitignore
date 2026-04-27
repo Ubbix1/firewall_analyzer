@@ -65,10 +65,16 @@ venv/
 # Keys and Keystores
 *.keystore
 *.jks
+key.properties
 firebase-service-account-template.json
 firebase-service-account.json
 google-services.json
-
+GoogleService-Info.plist
+lib/firebase_options.dart
+firebase.json
+.firebaserc
+fcm_tokens.json
+registered_devices.json
 # Documentation
 *.md
 !/README.md

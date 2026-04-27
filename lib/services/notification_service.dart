@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -23,26 +23,28 @@ class NotificationService {
     const settings = InitializationSettings(android: androidSettings);
     await _plugin.initialize(settings);
 
-    final androidImplementation = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await androidImplementation?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        batteryChannelId,
-        'Battery Alerts',
-        description: 'Battery level and charging notifications',
-        importance: Importance.high,
-        playSound: true,
-      ),
-    );
-    await androidImplementation?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        securityChannelId,
-        'Security Alerts',
-        description: 'Critical and suspicious firewall alerts',
-        importance: Importance.max,
-        playSound: true,
-      ),
-    );
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidImplementation = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidImplementation?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          batteryChannelId,
+          'Battery Alerts',
+          description: 'Battery level and charging notifications',
+          importance: Importance.high,
+          playSound: true,
+        ),
+      );
+      await androidImplementation?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          securityChannelId,
+          'Security Alerts',
+          description: 'Critical and suspicious firewall alerts',
+          importance: Importance.max,
+          playSound: true,
+        ),
+      );
+    }
 
     _initialized = true;
     debugPrint('Notification service initialized');
@@ -80,23 +82,36 @@ class NotificationService {
     debugPrint('Showing notification [$type/$level]: $title - $body');
 
     try {
-      final androidDetails = AndroidNotificationDetails(
-        channelId,
-        channelName,
-        icon: notificationIcon,
-        channelDescription: channelDescription,
-        importance: Importance.max,
-        priority: Priority.high,
-        largeIcon: const DrawableResourceAndroidBitmap(notificationIcon),
-        showWhen: true,
-        visibility: NotificationVisibility.public,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 300, 200, 300]),
-        playSound: true,
-        category: isSecurityAlert ? AndroidNotificationCategory.alarm : null,
-        styleInformation: BigTextStyleInformation(body),
-      );
-      final details = NotificationDetails(android: androidDetails);
+      NotificationDetails? details;
+
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        Color? notificationColor;
+        if (level == 'critical') {
+          notificationColor = Colors.red;
+        } else if (level == 'warning') {
+          notificationColor = Colors.orange;
+        }
+
+        final androidDetails = AndroidNotificationDetails(
+          channelId,
+          channelName,
+          icon: notificationIcon,
+          channelDescription: channelDescription,
+          importance: Importance.max,
+          priority: Priority.high,
+          largeIcon: const DrawableResourceAndroidBitmap(notificationIcon),
+          showWhen: true,
+          visibility: NotificationVisibility.public,
+          enableVibration: true,
+          vibrationPattern: Int64List.fromList([0, 300, 200, 300]),
+          playSound: true,
+          color: notificationColor,
+          colorized: notificationColor != null,
+          category: isSecurityAlert ? AndroidNotificationCategory.alarm : null,
+          styleInformation: BigTextStyleInformation(body),
+        );
+        details = NotificationDetails(android: androidDetails);
+      }
 
       await _plugin.show(
         id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),

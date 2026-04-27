@@ -1507,6 +1507,14 @@ def send_firebase_notification(
                     sound="default",
                 ),
             ),
+            # Support for Windows/Web clients via Webpush
+            webpush=messaging.WebpushConfig(
+                notification=messaging.WebpushNotification(
+                    title=title,
+                    body=body,
+                    icon="notification_icon",
+                ),
+            ),
             token=fcm_token,
         )
         
