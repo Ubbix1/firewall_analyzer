@@ -577,6 +577,7 @@ def detect_port_scan(payload: dict) -> Optional[str]:
         return None
 
     now = time.time()
+    cutoff = now - PORT_SCAN_SLOW_WINDOW_SECONDS
     samples = [
         (seen_at, port)
         for seen_at, port in port_scan_tracker.get(source_ip, [])
