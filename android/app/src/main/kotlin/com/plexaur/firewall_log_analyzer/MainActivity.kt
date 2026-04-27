@@ -1,4 +1,4 @@
-package com.example.firewall_log_analyzer
+package com.plexaur.firewall_log_analyzer
 
 import android.content.ContentValues
 import android.os.Build
@@ -12,7 +12,7 @@ import java.io.IOException
 import java.io.OutputStream
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "com.example.firewall_log_analyzer/export"
+    private val CHANNEL = "com.plexaur.firewall_log_analyzer/export"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

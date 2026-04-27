@@ -24,7 +24,7 @@ class ExportResult {
 
 class ExportService {
   static const _channel =
-      MethodChannel('com.example.firewall_log_analyzer/export');
+      MethodChannel('com.plexaur.firewall_log_analyzer/export');
 
   Future<ExportResult> exportCsv(List<FirewallLog> logs) async {
     final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());

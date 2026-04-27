@@ -1,4 +1,4 @@
-package com.example.firewall_log_analyzer
+package com.plexaur.firewall_log_analyzer
 
 import android.app.Application
 import android.app.Notification

@@ -13,7 +13,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "com.example.firewall_log_analyzer"
+    namespace "com.plexaur.firewall_log_analyzer"
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.firewall_log_analyzer"
+        applicationId "com.plexaur.firewall_log_analyzer"
         minSdkVersion flutter.minSdkVersion
         targetSdk flutter.targetSdkVersion
         versionCode flutter.versionCode

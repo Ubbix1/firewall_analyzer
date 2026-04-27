@@ -8,7 +8,7 @@
 PRODUCT_NAME = firewall_log_analyzer
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.firewallLogAnalyzer
+PRODUCT_BUNDLE_IDENTIFIER = com.plexaur.firewallLogAnalyzer
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2024 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2024 com.plexaur. All rights reserved.

@@ -88,7 +88,7 @@ class ThreatMapScreen extends StatelessWidget {
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.firewall_log_analyzer',
+                  userAgentPackageName: 'com.plexaur.firewall_log_analyzer',
                 ),
                 MarkerLayer(markers: markers),
               ],
