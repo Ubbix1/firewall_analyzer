@@ -1,0 +1,49 @@
+name: firewall_log_analyzer
+description: A new Flutter project.
+
+publish_to: 'none' # Remove this line if you want to publish to pub.dev
+
+version: 3.5.0+114
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: 8.3.7
+  path_provider: 2.1.5
+  intl: ^0.19.0
+  http: ^1.6.0
+  sqflite: 2.4.2
+  path: ^1.8.1
+  shared_preferences: 2.5.3
+  web_socket_channel: ^3.0.1
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  flutter_local_notifications: ^18.0.1
+  android_alarm_manager_plus: ^4.0.4
+  permission_handler: ^12.0.1
+  firebase_core: ^3.0.0
+  firebase_messaging: ^15.0.0
+  device_info_plus: ^10.1.2
+  crypto: ^3.0.7
+  url_launcher: ^6.3.2
+  shimmer: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/FLA_icon.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
