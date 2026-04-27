@@ -66,6 +66,7 @@ venv/
 *.keystore
 *.jks
 firebase-service-account-template.json
+firebase-service-account.json
 google-services.json
 
 # Documentation
