@@ -48,31 +48,24 @@ class LogEntryTile extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: isDark ? colorScheme.surfaceVariant.withOpacity(0.4) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: isDark ? colorScheme.surfaceVariant.withOpacity(0.3) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: riskColor.withOpacity(0.3),
-          width: 1,
+          color: riskColor.withOpacity(0.15),
+          width: 0.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: riskColor.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(12),
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Risk level indicator bar
               Container(
-                width: 6,
+                width: 4,
                 color: riskColor,
               ),
               Expanded(
@@ -80,7 +73,7 @@ class LogEntryTile extends StatelessWidget {
                   onLongPress: onLongPress,
                   onTap: onAnalyze,
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -92,8 +85,8 @@ class LogEntryTile extends StatelessWidget {
                                 log.ipAddress,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 17,
-                                  letterSpacing: 0.5,
+                                  fontSize: 14,
+                                  letterSpacing: 0.1,
                                 ),
                               ),
                             ),
@@ -101,41 +94,35 @@ class LogEntryTile extends StatelessWidget {
                               _formatTimestamp(log.timestamp),
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
+                                    fontSize: 10,
                                   ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 2),
                         Row(
                           children: [
                             _buildBadge(
                               context,
                               log.method.toUpperCase(),
-                              isDark ? colorScheme.primaryContainer : colorScheme.primary.withOpacity(0.1),
+                              isDark ? colorScheme.primaryContainer.withOpacity(0.5) : colorScheme.primary.withOpacity(0.05),
                               isDark ? colorScheme.onPrimaryContainer : colorScheme.primary,
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             _buildBadge(
                               context,
                               analysis.riskLevel.toUpperCase(),
-                              riskColor.withOpacity(0.15),
+                              riskColor.withOpacity(0.1),
                               riskColor,
                             ),
                             if (analysis.isBackendScored) ...[
-                              const SizedBox(width: 8),
-                              const Icon(Icons.verified, size: 16, color: Colors.blue),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.verified, size: 14, color: Colors.blue),
                             ],
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            _buildInfoItem(context, Icons.language, log.country.isEmpty ? "Unknown" : log.country),
-                            const SizedBox(width: 16),
-                            _buildInfoItem(context, Icons.data_usage, '${log.responseSize} B'),
-                            const SizedBox(width: 16),
-                            _buildInfoItem(context, Icons.code, 'Status ${log.responseCode}'),
+                            const Spacer(),
+                            _buildInfoItem(context, Icons.code, '${log.responseCode}'),
+                            const SizedBox(width: 8),
+                            _buildInfoItem(context, Icons.data_usage, '${log.responseSize}B'),
                           ],
                         ),
                       ],
@@ -143,15 +130,11 @@ class LogEntryTile extends StatelessWidget {
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Center(
-                  child: IconButton(
-                    onPressed: onAnalyze,
-                    icon: Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
-                    tooltip: 'Deep Analysis',
-                  ),
-                ),
+              IconButton(
+                onPressed: onAnalyze,
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.chevron_right, size: 20, color: colorScheme.onSurfaceVariant),
+                tooltip: 'Analyze',
               ),
             ],
           ),

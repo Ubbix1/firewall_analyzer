@@ -16,7 +16,7 @@ final _random = Random.secure();
 
 Map<String, String> generateAppAuthHeaders(String method, String path, String body, {String? deviceId}) {
   if (!hasAppAccessToken) {
-    return const <String, String>{};
+    return <String, String>{};
   }
 
   final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
@@ -176,7 +176,8 @@ int _statusPortForWebSocketUri(Uri uri, String scheme) {
 }
 
 Uri? parseWebSocketUri(String rawInput) {
-  final trimmed = rawInput.trim();
+  // Aggressively strip trailing fragments like # or query params that don't belong in the base URL
+  final trimmed = rawInput.trim().split('#')[0].split('?')[0];
   if (trimmed.isEmpty) {
     return null;
   }

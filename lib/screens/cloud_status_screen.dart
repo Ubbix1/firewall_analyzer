@@ -151,18 +151,18 @@ class _CloudStatusScreenState extends State<CloudStatusScreen> {
         .join(' ');
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Expanded(
             child: Text(
               displayName,
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
           Text(
             status,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: color,
                   fontWeight: FontWeight.bold,
                 ),
@@ -297,14 +297,14 @@ class _CloudStatusScreenState extends State<CloudStatusScreen> {
             : 'Stopped';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
@@ -314,34 +314,34 @@ class _CloudStatusScreenState extends State<CloudStatusScreen> {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
-                if (image.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                if (image.isNotEmpty)
                   Text(
                     image,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 9),
                   ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  status,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            statusLabel,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: statusColor,
-                  fontWeight: FontWeight.bold,
-                ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                statusLabel,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              Text(
+                status,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 8),
+              ),
+            ],
           ),
         ],
       ),

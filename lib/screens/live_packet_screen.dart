@@ -98,20 +98,22 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
 
   Widget _buildFilterBar(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
           FilterChip(
             label: const Text('All Traffic'),
             selected: !_showSuspiciousOnly,
             onSelected: (val) => setState(() => _showSuspiciousOnly = false),
+            visualDensity: VisualDensity.compact,
           ),
           const SizedBox(width: 8),
           FilterChip(
-            label: const Text('Suspicious Only'),
+            label: const Text('Suspicious'),
             selected: _showSuspiciousOnly,
             onSelected: (val) => setState(() => _showSuspiciousOnly = true),
             selectedColor: theme.colorScheme.errorContainer,
+            visualDensity: VisualDensity.compact,
           ),
         ],
       ),
@@ -120,7 +122,7 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
 
   Widget _buildConnectionHeader(ThemeData theme, LiveController ctrl) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
@@ -130,7 +132,7 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
           Icon(
             ctrl.isConnected ? Icons.sensors : Icons.sensors_off,
             color: ctrl.isConnected ? Colors.green : theme.disabledColor,
-            size: 20,
+            size: 18,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -140,7 +142,7 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
               children: [
                 Text(
                   ctrl.statusMessage,
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: ctrl.isConnected ? theme.colorScheme.primary : null,
                   ),
@@ -152,7 +154,7 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
                     'Uptime: ${ctrl.connectedDuration}',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.hintColor,
-                      fontSize: 10,
+                      fontSize: 9,
                     ),
                   ),
               ],
@@ -161,31 +163,41 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
           if (ctrl.isConnected) ...[
             _PulseIndicator(color: ctrl.isSniffing ? Colors.green : Colors.grey),
             const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: ctrl.isSniffing ? ctrl.stopSniffing : ctrl.startSniffing,
-              icon: Icon(ctrl.isSniffing ? Icons.stop : Icons.play_arrow, size: 18),
-              label: Text(ctrl.isSniffing ? 'STOP SNIFFING' : 'START SNIFFING'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ctrl.isSniffing 
-                    ? theme.colorScheme.errorContainer 
-                    : theme.colorScheme.primaryContainer,
-                foregroundColor: ctrl.isSniffing 
-                    ? theme.colorScheme.error 
-                    : theme.colorScheme.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+            SizedBox(
+              height: 32,
+              child: FilledButton.tonalIcon(
+                onPressed: ctrl.isSniffing ? ctrl.stopSniffing : ctrl.startSniffing,
+                icon: Icon(ctrl.isSniffing ? Icons.stop : Icons.play_arrow, size: 16),
+                label: Text(ctrl.isSniffing ? 'STOP' : 'START'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: ctrl.isSniffing 
+                      ? theme.colorScheme.errorContainer 
+                      : theme.colorScheme.primaryContainer,
+                  foregroundColor: ctrl.isSniffing 
+                      ? theme.colorScheme.error 
+                      : theme.colorScheme.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
-            const SizedBox(width: 8),
             IconButton(
               onPressed: () => _saveSnapshot(ctrl),
-              icon: const Icon(Icons.save_alt, size: 22),
+              icon: const Icon(Icons.save_alt, size: 20),
               tooltip: 'Save Snapshot',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              visualDensity: VisualDensity.compact,
               color: theme.colorScheme.primary,
             ),
+            const SizedBox(width: 4),
             IconButton(
               onPressed: () => ctrl.disconnect(),
               icon: const Icon(Icons.power_settings_new, size: 20),
               tooltip: 'Disconnect',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              visualDensity: VisualDensity.compact,
               color: theme.colorScheme.error,
             ),
           ],
@@ -265,19 +277,37 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: ctrl.isConnecting ? null : () => ctrl.connect(_urlController.text.trim()),
-                          icon: ctrl.isConnecting
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.play_arrow),
-                          label: Text(ctrl.isConnecting ? 'Connecting...' : 'Start Live Feed'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton.icon(
+                              onPressed: ctrl.isConnecting ? null : () => ctrl.connect(_urlController.text.trim()),
+                              icon: ctrl.isConnecting
+                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.play_arrow),
+                              label: Text(ctrl.isConnecting ? 'Connecting...' : 'Start Feed'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
                           ),
-                        ),
+                          if (ctrl.isConnecting) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => ctrl.disconnect(),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: theme.colorScheme.error,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: const Text('Stop'),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -339,8 +369,8 @@ class _PacketListTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        height: 80,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
           color: isCritical ? theme.colorScheme.error.withOpacity(0.03) : null,
           border: Border(bottom: BorderSide(color: theme.dividerColor, width: 0.5)),
@@ -348,7 +378,7 @@ class _PacketListTile extends StatelessWidget {
         child: Row(
           children: [
             _buildSeverityIndicator(analysis.riskLevel),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,7 +387,7 @@ class _PacketListTile extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
                           color: _getMethodColor(packet.log.method).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(4),
@@ -365,7 +395,7 @@ class _PacketListTile extends StatelessWidget {
                         child: Text(
                           packet.log.method.toUpperCase(),
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.bold,
                             color: _getMethodColor(packet.log.method),
                           ),
@@ -378,13 +408,14 @@ class _PacketListTile extends StatelessWidget {
                           style: theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             fontFamily: 'monospace',
+                            fontSize: 13,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (packet.log.backendAlerts?.isNotEmpty ?? false) ...[
-                        const SizedBox(width: 6),
-                        Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange.shade700),
+                        const SizedBox(width: 4),
+                        Icon(Icons.warning_amber_rounded, size: 12, color: Colors.orange.shade700),
                       ],
                       const Spacer(),
                       if (packet.log.source.isNotEmpty)
@@ -397,7 +428,7 @@ class _PacketListTile extends StatelessWidget {
                           child: Text(
                             packet.log.source.toUpperCase(),
                             style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 8,
+                              fontSize: 7,
                               color: theme.hintColor,
                               letterSpacing: 0.5,
                             ),
@@ -405,11 +436,12 @@ class _PacketListTile extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     packet.log.request,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                      fontSize: 11,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -417,6 +449,7 @@ class _PacketListTile extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -426,9 +459,10 @@ class _PacketListTile extends StatelessWidget {
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.hintColor,
                     fontWeight: FontWeight.w500,
+                    fontSize: 9,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 _buildRiskChip(analysis.riskLevel, theme),
               ],
             ),

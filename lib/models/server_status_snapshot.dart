@@ -16,6 +16,7 @@ class ServerStatusSnapshot {
   final double? diskTotalGb;
   final double? diskUsedGb;
   final double? diskUsagePercent;
+  final double? cpuTemp;
   // added metrics
   final int sshConnections;
   final int activeTcpConnections;
@@ -80,5 +81,6 @@ class ServerStatusSnapshot {
     required this.batteryStatus,
     this.cloudStatus = const {},
     this.dockerContainers = const [],
+    this.cpuTemp,
   });
 }

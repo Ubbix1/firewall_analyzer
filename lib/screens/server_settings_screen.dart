@@ -112,7 +112,6 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
                                 border: OutlineInputBorder(),
                               ),
                             ),
-
                             const SizedBox(height: 12),
 
                             Wrap(
@@ -223,9 +222,6 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
 
                     const SizedBox(height: 16),
 
-                    /// SSH MONITOR CARD
-                    if (snapshot != null) _buildSshMonitorCard(context, snapshot),
-                    if (snapshot != null) const SizedBox(height: 16),
 
                     /// SECURITY CARD
                     Card(
@@ -341,70 +337,4 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
     );
   }
 
-  Widget _buildSshMonitorCard(BuildContext context, snapshot) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.security, color: Colors.indigo),
-                const SizedBox(width: 8),
-                Text(
-                  'SSH Monitor',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Active SSH Sessions',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            if (snapshot.activeSshSessions.isEmpty)
-              const Text('No active SSH sessions.')
-            else
-              ...snapshot.activeSshSessions.map((session) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.person, color: Colors.green),
-                  title: Text(session['user'] ?? 'Unknown User'),
-                  subtitle: Text('IP: ${session['ip']} | TTY: ${session['tty']}'),
-                  trailing: Text(session['connectedAt'] ?? '', style: const TextStyle(fontSize: 12)),
-                );
-              }),
-            const Divider(),
-            Text(
-              'Recent Bot Attempts (Auth Logs)',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            if (snapshot.recentSshAttempts.isEmpty)
-              const Text('No recent auth logs found.')
-            else
-              ...snapshot.recentSshAttempts.take(10).map((attempt) {
-                final isFailed = attempt['status'] == 'FAILED';
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    isFailed ? Icons.warning : Icons.check_circle,
-                    color: isFailed ? Colors.red : Colors.green,
-                  ),
-                  title: Text('User: ${attempt['user']}'),
-                  subtitle: Text('IP: ${attempt['ip']}\nTime: ${attempt['timestamp']}'),
-                  isThreeLine: true,
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -52,9 +52,9 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final HomeScreenController _ctrl;
   late final ServerStatusController _serverStatusController;
   late final LiveController _liveController;
-  int _selectedIndex = 0;
+  int _selectedIndex = 3;
 
-  final List<bool> _initializedTabs = [true, false, false, false, false];
+  final List<bool> _initializedTabs = [false, false, false, true, false];
 
   @override
   void initState() {

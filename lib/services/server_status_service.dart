@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/app_usage.dart';
 import '../models/server_status_snapshot.dart';
 import 'server_status_parser.dart';
 import 'websocket_url_helper.dart';
@@ -36,5 +37,34 @@ class ServerStatusService {
     }
 
     return snapshot;
+  }
+
+  Future<List<AppUsage>> fetchAppUsage(Uri uri) async {
+    final deviceId = await DeviceIdService.getDeviceId();
+    final statusUri = uri.replace(path: '/app_usage');
+    
+    final response = await http
+        .get(
+          authenticatedHttpUri(statusUri),
+          headers: generateAppAuthHeaders(
+            'GET', 
+            authenticatedHttpUri(statusUri).path, 
+            '',
+            deviceId: deviceId,
+          ),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw StateError('HTTP ${response.statusCode}');
+    }
+
+    final payload = jsonDecode(utf8.decode(response.bodyBytes));
+    if (payload is! Map<String, dynamic> || payload['apps'] is! List) {
+      throw const FormatException('Unexpected app usage payload.');
+    }
+
+    final List<dynamic> appsJson = payload['apps'];
+    return appsJson.map((json) => AppUsage.fromJson(json)).toList();
   }
 }

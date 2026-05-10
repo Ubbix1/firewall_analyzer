@@ -51,13 +51,20 @@ class DeviceIdService {
         deviceHash = _generateHash(identifier);
       } else if (defaultTargetPlatform.toString() == 'TargetPlatform.iOS') {
         final iosInfo = await deviceInfo.iosInfo;
-        // Use device name and model for iOS
         final identifier = [
           iosInfo.name ?? '',
           iosInfo.model ?? '',
-          iosInfo.identifierForVendor ?? '', // Unique per app vendor
+          iosInfo.identifierForVendor ?? '',
         ].join('_');
-        
+        deviceHash = _generateHash(identifier);
+      } else if (defaultTargetPlatform.toString() == 'TargetPlatform.windows') {
+        final windowsInfo = await deviceInfo.windowsInfo;
+        final identifier = [
+          windowsInfo.computerName,
+          windowsInfo.numberOfCores.toString(),
+          windowsInfo.systemMemoryInMegabytes.toString(),
+          windowsInfo.deviceId,
+        ].join('_');
         deviceHash = _generateHash(identifier);
       } else {
         // Fallback for other platforms
@@ -124,6 +131,13 @@ class DeviceIdService {
         info['model'] = iosInfo.model ?? 'Unknown';
         info['system_version'] = iosInfo.systemVersion ?? 'Unknown';
         info['identifier_for_vendor'] = iosInfo.identifierForVendor ?? 'Unknown';
+      } else if (defaultTargetPlatform.toString() == 'TargetPlatform.windows') {
+        final windowsInfo = await deviceInfo.windowsInfo;
+        info['platform'] = 'Windows';
+        info['computer_name'] = windowsInfo.computerName;
+        info['number_of_cores'] = windowsInfo.numberOfCores.toString();
+        info['system_memory_mb'] = windowsInfo.systemMemoryInMegabytes.toString();
+        info['device_id'] = windowsInfo.deviceId;
       }
     } catch (e) {
       info['error'] = 'Could not retrieve device info: $e';

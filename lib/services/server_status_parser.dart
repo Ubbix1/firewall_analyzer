@@ -29,6 +29,7 @@ class ServerStatusParser {
       cpuModel: _asString(payload['cpuModel']),
       cpuCores: _asInt(payload['cpuCores']) ?? 0,
       cpuUsagePercent: _asDouble(payload['cpuUsagePercent']),
+      cpuTemp: _asDouble(payload['cpuTemp']),
       memoryTotalMb: _asInt(payload['memoryTotalMb']),
       memoryUsedMb: _asInt(payload['memoryUsedMb']),
       memoryUsagePercent: _asDouble(payload['memoryUsagePercent']),

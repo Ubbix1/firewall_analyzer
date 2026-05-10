@@ -109,7 +109,7 @@ class _LogListViewState extends State<LogListView> {
 
               // ── Control Panel ─────────────────────────────────────────────
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Row(
                   children: [
                     Expanded(
@@ -121,18 +121,20 @@ class _LogListViewState extends State<LogListView> {
                       flex: 2,
                       child: _buildViewFilterDropdown(context),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     if (ctrl.isLoading)
                       IconButton(
                         onPressed: () => ctrl.stopLoading(),
-                        icon: const Icon(Icons.stop_circle_outlined, color: Colors.red),
+                        icon: const Icon(Icons.stop_circle_outlined, color: Colors.red, size: 20),
                         tooltip: 'Stop loading',
+                        visualDensity: VisualDensity.compact,
                       )
                     else
                       IconButton(
                         onPressed: () => ctrl.clearLogs(),
-                        icon: const Icon(Icons.delete_sweep_outlined),
+                        icon: const Icon(Icons.delete_sweep_outlined, size: 20),
                         tooltip: 'Clear logs',
+                        visualDensity: VisualDensity.compact,
                       ),
                   ],
                 ),
@@ -193,18 +195,19 @@ class _LogListViewState extends State<LogListView> {
 
   Widget _buildStatsDashboard(BuildContext context, int suspiciousCount) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Security Overview',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.bold,
               letterSpacing: 0.5,
+              fontSize: 12,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -248,30 +251,32 @@ class _LogListViewState extends State<LogListView> {
   Widget _buildStatCard(BuildContext context, String label, String value, IconData icon, Color color) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      width: 130,
-      margin: const EdgeInsets.only(right: 12),
-      padding: const EdgeInsets.all(16),
+      width: 90,
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.15 : 0.08),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.2)),
+        color: color.withOpacity(isDark ? 0.12 : 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 12),
+          Icon(icon, color: color, size: 14),
+          const SizedBox(height: 4),
           Text(
             value,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.bold,
               color: color,
+              fontSize: 13,
             ),
           ),
           Text(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 9,
             ),
           ),
         ],
@@ -287,8 +292,8 @@ class _LogListViewState extends State<LogListView> {
       decoration: InputDecoration(
         labelText: 'Source',
         prefixIcon: const Icon(Icons.dns_outlined, size: 18),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
       ),
       items: serverLogSources.map((source) => DropdownMenuItem(
         value: source.id,
@@ -321,8 +326,8 @@ class _LogListViewState extends State<LogListView> {
       decoration: InputDecoration(
         labelText: 'View',
         prefixIcon: const Icon(Icons.auto_awesome_mosaic_outlined, size: 18),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
       ),
       items: HomeScreenController.logViewOptions.map((opt) => DropdownMenuItem(
         value: opt,

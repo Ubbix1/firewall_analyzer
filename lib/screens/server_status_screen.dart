@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 
 import '../controllers/server_status_controller.dart';
 import '../models/server_status_snapshot.dart';
+import '../models/app_usage.dart';
 
 class ServerStatusScreen extends StatefulWidget {
   final ServerStatusController controller;
@@ -75,74 +76,96 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
             const SizedBox(height: 16),
             _buildBatteryCard(context, snapshot),
             _buildSectionTitle('Server'),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.8,
               children: [
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.dns,
                   label: 'Hostname',
                   value: snapshot.hostname,
+                  color: Colors.blue,
                 ),
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.wifi,
                   label: 'Local IP',
                   value: snapshot.localIp,
+                  color: Colors.indigo,
                 ),
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.timelapse,
                   label: 'Uptime',
                   value: snapshot.uptime,
+                  color: Colors.teal,
                 ),
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.group,
                   label: 'Clients',
                   value: '${snapshot.connectedClients}',
+                  color: Colors.purple,
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             _buildSectionTitle('System Specs'),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.8,
               children: [
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.memory,
                   label: 'CPU',
                   value: '${snapshot.cpuModel}\n${snapshot.cpuCores} cores',
+                  color: Colors.orange,
                 ),
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.developer_board,
                   label: 'Platform',
-                  value:
-                      '${snapshot.platform} ${snapshot.platformRelease}\n${snapshot.architecture}',
+                  value: '${snapshot.platform}\n${snapshot.architecture}',
+                  color: Colors.blueGrey,
                 ),
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.code,
                   label: 'Python',
                   value: snapshot.pythonVersion,
+                  color: Colors.blue,
                 ),
-                _buildMetricCard(
+                _buildModernStatCard(
                   context,
                   icon: Icons.info_outline,
                   label: 'Kernel',
                   value: snapshot.platformVersion,
+                  color: Colors.cyan,
                 ),
               ],
             ),
             const SizedBox(height: 16),
             _buildSectionTitle('Resource Usage'),
-            Card(
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: Theme.of(context).colorScheme.surface,
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
+                ),
+              ),
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     _buildResourceBar(
@@ -152,7 +175,7 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
                       value: snapshot.cpuUsagePercent ?? 0,
                       displayValue: _formatPercent(snapshot.cpuUsagePercent),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     _buildResourceBar(
                       context,
                       icon: Icons.storage,
@@ -162,7 +185,7 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
                           : 0,
                       displayValue: '${_formatMb(snapshot.memoryUsedMb)} / ${_formatMb(snapshot.memoryTotalMb)}',
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     _buildResourceBar(
                       context,
                       icon: Icons.save,
@@ -174,36 +197,11 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
                 ),
               ),
             ),
-            // Network Overview and Active Traffic hidden to save memory/resources
-            const SizedBox(height: 16),
-            _buildSectionTitle('Security & Sessions'),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _buildModernStatCard(
-                  context,
-                  icon: Icons.security,
-                  label: 'SSH SESSIONS',
-                  value: '${snapshot.sshConnections}',
-                  color: Colors.orange,
-                ),
-                _buildModernStatCard(
-                  context,
-                  icon: Icons.bolt,
-                  label: 'TCP CONNS',
-                  value: '${snapshot.activeTcpConnections}',
-                  color: Colors.amber,
-                ),
-                _buildModernStatCard(
-                  context,
-                  icon: Icons.swap_horiz,
-                  label: 'UDP CONNS',
-                  value: '${snapshot.udpConnections}',
-                  color: Colors.cyan,
-                ),
-              ],
-            ),
+             const SizedBox(height: 16),
+             _buildSectionTitle('Live SSH Sessions'),
+             _buildLiveSshSessionsList(context, snapshot),
+            _buildSectionTitle('App Usage (Top Processes)'),
+            _buildAppUsageList(context),
             const SizedBox(height: 32),
           ],
         ),
@@ -229,53 +227,59 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
         children: [
           // Overview Card Skeleton
           Container(
-            height: 140,
+            height: 120,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(24),
             ),
           ),
           const SizedBox(height: 16),
           // Battery Card Skeleton
           Container(
-            height: 80,
+            height: 90,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(24),
             ),
           ),
           const SizedBox(height: 24),
           _buildSkeletonSectionTitle(),
           const SizedBox(height: 12),
-          // Metric Cards Row 1
-          Row(
-            children: [
-              Expanded(child: _buildSkeletonMetricCard()),
-              const SizedBox(width: 12),
-              Expanded(child: _buildSkeletonMetricCard()),
-            ],
+          // Server Grid Skeleton
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.6,
+            children: List.generate(4, (index) => _buildSkeletonMetricCard()),
           ),
           const SizedBox(height: 24),
           _buildSkeletonSectionTitle(),
           const SizedBox(height: 12),
           // Resource usage card
           Container(
-            height: 200,
+            height: 220,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(24),
             ),
           ),
           const SizedBox(height: 24),
           _buildSkeletonSectionTitle(),
           const SizedBox(height: 12),
-          // Grid-like metrics
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: List.generate(
-                4, (index) => _buildSkeletonMetricCard(width: 170)),
+          // System Specs Grid Skeleton
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.6,
+            children: List.generate(4, (index) => _buildSkeletonMetricCard()),
           ),
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -417,53 +421,113 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
     final icon = snapshot.isCharging == true
         ? Icons.battery_charging_full
         : Icons.battery_std;
+    final color = (snapshot.batteryPercent ?? 100) < 20 ? Colors.red : Colors.green;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 26,
-              child: Icon(icon),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [
+            color.withOpacity(0.12),
+            color.withOpacity(0.04),
+          ],
+        ),
+        border: Border.all(
+          color: color.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Battery',
-                    style: Theme.of(context).textTheme.titleMedium,
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Battery Status',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                    color: Theme.of(context).hintColor,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    batteryText,
-                    style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  batteryText,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (snapshot.batteryPresent && snapshot.batteryPercent != null)
+            SizedBox(
+              width: 50,
+              height: 50,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CircularProgressIndicator(
+                    value: snapshot.batteryPercent! / 100,
+                    strokeWidth: 6,
+                    backgroundColor: color.withOpacity(0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                  Center(
+                    child: Text(
+                      '${snapshot.batteryPercent}%',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildSectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
-      child: Row(
+      padding: const EdgeInsets.only(top: 16, bottom: 8, left: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 4,
-            height: 20,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(width: 8),
           Text(
-            title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Container(
+            width: 24,
+            height: 2,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(1),
+            ),
           ),
         ],
       ),
@@ -478,77 +542,76 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
     required String displayValue,
   }) {
     final percentage = value.clamp(0, 100);
-    final color = percentage > 80
+    final color = percentage > 85
         ? Colors.red
-        : percentage > 60
+        : percentage > 70
             ? Colors.orange
             : Colors.green;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: color,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const Spacer(),
+            Text(
+              displayValue,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).hintColor,
+                    fontFamily: 'monospace',
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                height: 10,
+                width: double.infinity,
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(
-                  icon,
-                  size: 16,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              const Spacer(),
-              Text(
-                displayValue,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).hintColor,
-                    ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Stack(
-            children: [
-              Container(
-                height: 6,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
               AnimatedContainer(
-                duration: const Duration(milliseconds: 500),
-                height: 6,
-                width: MediaQuery.of(context).size.width * (percentage / 100),
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeOutCubic,
+                height: 10,
+                width: (MediaQuery.of(context).size.width - 64) * (percentage / 100),
                 decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(3),
+                  gradient: LinearGradient(
+                    colors: [
+                      color,
+                      color.withOpacity(0.7),
+                    ],
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: color.withOpacity(0.3),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+                      color: color.withOpacity(0.4),
+                      blurRadius: 6,
+                      offset: const Offset(2, 0),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -566,69 +629,66 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
     return Container(
       constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           colors: [
-            baseColor.withOpacity(0.12),
-            baseColor.withOpacity(0.04),
+            baseColor.withOpacity(0.1),
+            baseColor.withOpacity(0.02),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         border: Border.all(
-          color: baseColor.withOpacity(0.2),
+          color: baseColor.withOpacity(0.15),
           width: 1,
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: baseColor.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: baseColor,
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: baseColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 14,
+                      color: baseColor,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 9,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.8,
-                ),
-              ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 0.2),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  );
-                },
                 child: Text(
                   value,
                   key: ValueKey<String>(value),
-                  style: theme.textTheme.titleLarge?.copyWith(
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w900,
                     color: theme.colorScheme.onSurface,
+                    fontSize: 12,
+                    height: 1.1,
                   ),
                 ),
               ),
@@ -737,46 +797,7 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
     );
   }
 
-  Widget _buildMetricCard(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                value,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+
 
   String _formatPercent(double? value) {
     if (value == null) {
@@ -797,6 +818,208 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
       return 'Unavailable';
     }
     return '${value.toStringAsFixed(1)} GB';
+  }
+
+  Widget _buildAppUsageList(BuildContext context) {
+    final apps = widget.controller.appUsage;
+    
+    if (apps.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: Theme.of(context).colorScheme.surface,
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.query_stats, size: 48, color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+            const SizedBox(height: 16),
+            const Text('No app usage data available yet.', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => widget.controller.loadAppUsage(),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Fetch App Usage'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: Theme.of(context).colorScheme.surface,
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+      ),
+      child: Column(
+        children: [
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: apps.length,
+            separatorBuilder: (context, index) => Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
+            itemBuilder: (context, index) {
+              final app = apps[index];
+              return ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      app.name.isNotEmpty ? app.name.substring(0, 1).toUpperCase() : '?',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                title: Text(
+                  app.name,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                ),
+                subtitle: Text(
+                  'PID: ${app.pid} • ${app.user}',
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildUsageTag(context, '${app.cpuUsage}%', app.cpuUsage > 50 ? Colors.red : Colors.blue, 'CPU'),
+                    const SizedBox(width: 8),
+                    _buildUsageTag(context, '${app.memoryUsage}%', app.memoryUsage > 10 ? Colors.orange : Colors.green, 'MEM'),
+                  ],
+                ),
+              );
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: TextButton.icon(
+               onPressed: () => widget.controller.loadAppUsage(),
+               icon: const Icon(Icons.refresh, size: 16),
+               label: const Text('Refresh Processes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUsageTag(BuildContext context, String value, Color color, String label) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Theme.of(context).hintColor),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w900,
+            fontSize: 12,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLiveSshSessionsList(BuildContext context, ServerStatusSnapshot snapshot) {
+    if (snapshot.activeSshSessions.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: Theme.of(context).colorScheme.surface,
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+        ),
+        child: const Center(
+          child: Text('No active SSH sessions.', style: TextStyle(fontWeight: FontWeight.w500)),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: Theme.of(context).colorScheme.surface,
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: snapshot.activeSshSessions.length,
+        separatorBuilder: (context, index) => Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
+        itemBuilder: (context, index) {
+          final session = snapshot.activeSshSessions[index];
+          final user = session['user'] ?? 'Unknown User';
+          final ip = session['ip'] ?? 'Unknown IP';
+          
+          String deviceName = ip;
+          try {
+            final regDevice = snapshot.registeredDevices.firstWhere(
+              (d) => d['ip'] == ip || d['localIp'] == ip,
+              orElse: () => {},
+            );
+            if (regDevice.isNotEmpty) {
+              deviceName = regDevice['deviceName'] ?? regDevice['deviceModel'] ?? ip;
+            }
+          } catch (_) {}
+
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.indigo.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.terminal, color: Colors.indigo, size: 20),
+            ),
+            title: Text(
+              deviceName,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+            ),
+            subtitle: Text(
+              'User: $user • ${session['connectedAt'] ?? 'Unknown'}',
+              style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
+            ),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.security, color: Colors.green, size: 12),
+                  SizedBox(width: 4),
+                  Text(
+                    'SECURE',
+                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.w900, fontSize: 9),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 

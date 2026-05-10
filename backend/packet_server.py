@@ -118,49 +118,8 @@ def load_env_file(path: Path = Path(".env")) -> None:
 
 load_env_file()
 
-# 1. GeoIP Cache with Size Limit
-geoip_cache = {}
-MAX_GEOIP_CACHE_SIZE = 5000
-
+# GeoIP lookup removed to prevent external API dependency issues.
 def get_geoip(ip: str) -> dict:
-    if ip in geoip_cache:
-        return geoip_cache[ip]
-    if not ip or ip.startswith("192.168.") or ip.startswith("10.") or ip.startswith("127.") or ip == "0.0.0.0":
-        return {}
-        
-    # Simple LRU-ish eviction
-    if len(geoip_cache) >= MAX_GEOIP_CACHE_SIZE:
-        # Remove a random item or just clear (simple approach)
-        try:
-            it = iter(geoip_cache)
-            for _ in range(100):
-                next_key = next(it)
-                del geoip_cache[next_key]
-        except StopIteration:
-            geoip_cache.clear()
-
-    try:
-        req = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
-        if req.status_code == 200:
-            data = req.json()
-            if data and data.get("status") == "success":
-                lat = data.get("lat")
-                lon = data.get("lon")
-                geo = {
-                    "country": data.get("country"),
-                    "city": data.get("city"),
-                    "isp": data.get("isp"),
-                    "lat": lat,
-                    "lon": lon,
-                    "latitude": lat,
-                    "longitude": lon,
-                }
-                geoip_cache[ip] = geo
-                geoip_cache[ip] = geo
-                return geo
-    except:
-        pass
-    geoip_cache[ip] = {}
     return {}
 
 # 2. Active Mitigation
@@ -171,8 +130,14 @@ MAX_REPUTATION_SCORE = 200.0
 BLOCK_COOLDOWN_MINUTES = 60.0
 ip_reputation: Dict[str, dict] = {}
 TRUSTED_IPS = [
+    "127.0.0.1",         # localhost
+    "0.0.0.0",           # junk/empty source
+    "::",                # junk/empty ipv6
     "192.168.29.1",      # router
     "172.16.0.0/12",     # docker
+    "8.8.8.8",           # Google DNS
+    "8.8.4.4",           # Google DNS
+    "1.1.1.1",           # Cloudflare DNS
 ]
 REGISTERED_DEVICES_FILE = Path("registered_devices.json")
 registered_devices: Dict[str, dict] = {}
@@ -246,13 +211,13 @@ def queue_alert(msg: str) -> None:
     threading.Thread(target=send_alert, args=(msg,), daemon=True).start()
 
 
-def telegram_command_worker(stop_event: threading.Event) -> None:
+def telegram_command_worker(server, stop_event: threading.Event) -> None:
     """Poll Telegram for trusted chat commands such as /stop <ip>."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
 
     offset: Optional[int] = None
-    print(f"Telegram command listener enabled. Use /stop <ip> <pin> to block an IP.")
+    print(f"Telegram command listener enabled. Use /stop, /status, or /usage with your PIN.")
     if TELEGRAM_ADMIN_PIN == "0000":
         print("WARNING: Telegram Admin PIN is using default '0000'. Please set PACKET_ANALYZER_TELEGRAM_PIN.")
     while not stop_event.is_set():
@@ -295,27 +260,129 @@ def telegram_command_worker(stop_event: threading.Event) -> None:
                     continue
                 telegram_command_rate_limits[user_id] = now
 
+                text = message.get("text", "")
+                if not text:
+                    continue
+                    
                 parts = text.split()
                 command = parts[0].split("@", 1)[0].lower()
-                if command != "/stop":
+                if command not in ["/stop", "/status", "/usage", "/notify", "/test"]:
                     continue
 
-                if len(parts) < 3:
-                    send_alert("Usage: /stop <ip> <pin>")
+                if len(parts) < 2:
+                    send_alert("Usage: <command> <pin> [args]")
                     continue
 
-                target_ip = parts[1].strip()
-                supplied_pin = parts[2].strip()
+                # PIN is always the second token for all commands except /stop
+                supplied_pin = parts[1].strip()
+                
+                if command == "/stop":
+                    if len(parts) < 3:
+                        send_alert("Usage: /stop <ip> <pin>")
+                        continue
+                    target_ip = parts[1].strip()
+                    supplied_pin = parts[2].strip()
+                    
+                    if supplied_pin != TELEGRAM_ADMIN_PIN:
+                        send_alert("❌ Invalid PIN.")
+                        continue
+                    
+                    if block_ip(target_ip, force=True):
+                        send_alert(f"✅ Blocked {target_ip}")
+                    else:
+                        send_alert(f"Failed to block {target_ip}")
+                    continue
 
                 if supplied_pin != TELEGRAM_ADMIN_PIN:
-                    print(f"SECURITY: Unauthorized /stop attempt for {target_ip} from Telegram ID {user_id}")
-                    send_alert("❌ Invalid PIN. Command rejected.")
+                    send_alert("❌ Invalid PIN.")
                     continue
 
-                if block_ip(target_ip, force=True):
-                    send_alert(f"✅ Blocked {target_ip} (Verified by PIN)")
-                else:
-                    send_alert(f"Could not block {target_ip}; check server logs.")
+                if command == "/status":
+                    status = server.build_status_payload()
+                    msg = f"📊 *SERVER STATUS*\n\n"
+                    msg += f"🖥 *Host*: {status['hostname']}\n"
+                    msg += f"🔥 *CPU*: {status['cpuUsagePercent']}%"
+                    if status.get('cpuTemp'):
+                        msg += f" ({status['cpuTemp']}°C)"
+                    msg += "\n"
+                    msg += f"🧠 *RAM*: {status['memoryUsagePercent']}%\n"
+                    msg += f"🔋 *Battery*: {status['batteryPercent']}% ({status['batteryStatus']})\n"
+                    msg += f"⏱ *Uptime*: {status['uptime']}\n"
+                    msg += f"👤 *SSH*: {status['sshConnections']} active\n"
+                    
+                    # Add Docker info
+                    containers = status.get('dockerContainers', [])
+                    running = len([c for c in containers if c.get('state') == 'running'])
+                    msg += f"🐳 *Docker*: {running}/{len(containers)} containers running"
+                    
+                    send_alert(msg)
+                    continue
+
+                if command == "/usage":
+                    apps = get_app_usage_data()[:10]
+                    if not apps:
+                        send_alert("No app usage data available.")
+                        continue
+                    msg = "📱 *TOP PROCESSES*\n\n"
+                    for app in apps:
+                        msg += f"• `{app['name']}` (PID: {app['pid']})\n"
+                        msg += f"  CPU: {app['cpuUsage']}% | MEM: {app['memoryUsage']}%\n"
+                    send_alert(msg)
+                    continue
+
+                if command == "/test":
+                    # Send a test push notification to all registered devices
+                    tokens = load_registered_fcm_tokens()
+                    if not tokens:
+                        send_alert("⚠️ No registered devices to push to.")
+                        continue
+                    sent = 0
+                    for token in tokens:
+                        ok = send_firebase_notification(
+                            token,
+                            "🧪 Test Notification",
+                            "This is a test push from your Firewall server. Everything is working!",
+                            level="info",
+                            event_type="custom_alert",
+                        )
+                        if ok:
+                            sent += 1
+                    send_alert(f"✅ Test push sent to {sent}/{len(tokens)} device(s).")
+                    continue
+
+                if command == "/notify":
+                    # Usage: /notify <pin> <title> | <message>
+                    # Rejoin everything after the PIN
+                    if len(parts) < 3:
+                        send_alert("Usage: /notify <pin> <title> | <message>\n\nExample:\n`/notify 1234 Security Alert | Someone logged into your server`")
+                        continue
+                    # parts[0]=command, parts[1]=pin already verified above
+                    body_raw = " ".join(parts[2:])
+                    if "|" in body_raw:
+                        title_part, _, msg_part = body_raw.partition("|")
+                        notif_title = title_part.strip() or "Firewall Alert"
+                        notif_body  = msg_part.strip() or "No message provided."
+                    else:
+                        notif_title = "Firewall Alert"
+                        notif_body  = body_raw.strip()
+                    tokens = load_registered_fcm_tokens()
+                    if not tokens:
+                        send_alert("⚠️ No registered devices to push to.")
+                        continue
+                    sent = 0
+                    for token in tokens:
+                        ok = send_firebase_notification(
+                            token,
+                            notif_title,
+                            notif_body,
+                            level="info",
+                            event_type="custom_alert",
+                            channel_id="security_alerts",
+                        )
+                        if ok:
+                            sent += 1
+                    send_alert(f"📤 Push sent to {sent}/{len(tokens)} device(s).\n\n*Title*: {notif_title}\n*Body*: {notif_body}")
+                    continue
         except Exception as error:
             print("Telegram command polling failed:", error)
             stop_event.wait(5)
@@ -843,6 +910,16 @@ def update_and_check_reputation(ip: str, alerts: list[str]) -> bool:
     return new_score >= REPUTATION_BLOCK_THRESHOLD
 
 def analyze_for_threats(payload: dict) -> list:
+    source_ip = str(
+        payload.get("sourceIp")
+        or payload.get("srcIp")
+        or payload.get("ipAddress")
+        or ""
+    ).strip()
+    
+    if not source_ip or is_trusted_ip(source_ip):
+        return []
+
     alerts = []
     text_to_scan = " ".join(
         str(payload.get(field, ""))
@@ -1022,11 +1099,8 @@ def get_log_history(source: str, limit: int = 100, offset: int = 0, on_log_parse
             continue
         parsed = parse_ubuntu_log_line(line, source_name)
         if parsed:
-            src = parsed.get("sourceIp") or parsed.get("ipAddress")
-            if isinstance(src, str):
-                geo_info = get_geoip(src)
-                if geo_info:
-                    parsed.update(geo_info)
+            # GeoIP lookup removed
+            pass
 
             # ── Backend-authority threat enrichment ──────────────────────────
             # This mirrors log_callback() so the history path is consistent
@@ -1307,12 +1381,15 @@ def get_uptime_seconds() -> int:
 
 def get_memory_info() -> Dict[str, Optional[Union[int, float]]]:
     if psutil is not None:
-        memory = psutil.virtual_memory()
-        return {
-            "memoryTotalMb": round(memory.total / (1024 * 1024)),
-            "memoryUsedMb": round(memory.used / (1024 * 1024)),
-            "memoryUsagePercent": round(memory.percent, 1),
-        }
+        try:
+            memory = psutil.virtual_memory()
+            return {
+                "memoryTotalMb": int(memory.total / (1024 * 1024)),
+                "memoryUsedMb": int(memory.used / (1024 * 1024)),
+                "memoryUsagePercent": round(memory.percent, 1),
+            }
+        except Exception:
+            pass
 
     meminfo_path = Path("/proc/meminfo")
     if not meminfo_path.exists():
@@ -1322,20 +1399,76 @@ def get_memory_info() -> Dict[str, Optional[Union[int, float]]]:
             "memoryUsagePercent": None,
         }
 
-    meminfo = {}
-    for line in meminfo_path.read_text(encoding="utf-8").splitlines():
-        key, _, value = line.partition(":")
-        meminfo[key] = value.strip()
+    try:
+        meminfo = {}
+        for line in meminfo_path.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition(":")
+            meminfo[key] = value.strip()
 
-    total_kb = int(meminfo.get("MemTotal", "0 kB").split()[0])
-    available_kb = int(meminfo.get("MemAvailable", "0 kB").split()[0])
-    used_kb = max(total_kb - available_kb, 0)
-    usage_percent = round((used_kb / total_kb) * 100, 1) if total_kb else 0.0
-    return {
-        "memoryTotalMb": round(total_kb / 1024),
-        "memoryUsedMb": round(used_kb / 1024),
-        "memoryUsagePercent": usage_percent,
-    }
+        total_kb = int(meminfo.get("MemTotal", "0 kB").split()[0])
+        available_kb = int(meminfo.get("MemAvailable", "0 kB").split()[0])
+        used_kb = max(total_kb - available_kb, 0)
+        usage_percent = round((used_kb / total_kb) * 100, 1) if total_kb else 0.0
+        return {
+            "memoryTotalMb": round(total_kb / 1024),
+            "memoryUsedMb": round(used_kb / 1024),
+            "memoryUsagePercent": usage_percent,
+        }
+    except Exception:
+        return {
+            "memoryTotalMb": None,
+            "memoryUsedMb": None,
+            "memoryUsagePercent": None,
+        }
+
+def get_cpu_temperature() -> Optional[float]:
+    """Get CPU temperature if available (useful for laptop servers)."""
+    if psutil is None or not hasattr(psutil, "sensors_temperatures"):
+        return None
+    try:
+        temps = psutil.sensors_temperatures()
+        if not temps:
+            return None
+        # Try common keys for Linux/Ubuntu
+        for key in ["coretemp", "cpu_thermal", "package id 0"]:
+            if key in temps and temps[key]:
+                return round(temps[key][0].current, 1)
+        # Fallback: return first available
+        first_key = list(temps.keys())[0]
+        if temps[first_key] and len(temps[first_key]) > 0:
+            return round(temps[first_key][0].current, 1)
+    except Exception:
+        pass
+    return None
+
+
+def get_app_usage_data() -> List[Dict[str, Any]]:
+    """Get per-process resource usage for top processes."""
+    if psutil is None:
+        return []
+    
+    apps = []
+    try:
+        # Get processes sorted by memory usage
+        for proc in sorted(psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'status']), 
+                          key=lambda p: (p.info['memory_percent'] or 0), 
+                          reverse=True)[:20]:
+            try:
+                pinfo = proc.info
+                apps.append({
+                    "pid": pinfo['pid'],
+                    "name": pinfo['name'],
+                    "user": pinfo['username'] or "N/A",
+                    "cpuUsage": round(pinfo['cpu_percent'] or 0.0, 1),
+                    "memoryUsage": round(pinfo['memory_percent'] or 0.0, 1),
+                    "status": pinfo['status'],
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+    except Exception as e:
+        print(f"Error fetching app usage: {e}")
+    
+    return apps
 
 
 def get_cpu_usage_percent() -> Optional[float]:
@@ -2027,10 +2160,6 @@ class PacketServer:
         self.high_battery_notified = False
         
         # Battery monitoring interval (less frequent than status updates)
-        self.unique_source_ips = 0
-        self.ssh_connections = 0
-        self.active_tcp_connections = 0
-        self.udp_connections = 0
         self.battery_check_interval = battery_interval
         self.cached_battery_info = default_battery_info()
         self.packet_processing_queue: queue.Queue[Optional[Dict[str, object]]] = (
@@ -2151,11 +2280,8 @@ class PacketServer:
                 self.packet_processing_queue.task_done()
 
     def _process_packet_payload(self, packet_payload: Dict[str, object]) -> None:
+        # GeoIP lookup removed to prevent external API dependency
         src = packet_payload.get("srcIp") or packet_payload.get("ipAddress")
-        if isinstance(src, str):
-            geo_info = get_geoip(src)
-            if geo_info:
-                packet_payload.update(geo_info)
 
         alerts = analyze_for_threats(packet_payload)
         if alerts:
@@ -2195,10 +2321,13 @@ class PacketServer:
         print("Memory monitor loop started.")
         while True:
             try:
-                # Get memory usage of the current process
-                process = psutil.Process(os.getpid())
-                mem_bytes = process.memory_info().rss
-                self.server_memory_mb = mem_bytes / (1024 * 1024)
+                if psutil is not None:
+                    # Get memory usage of the current process
+                    process = psutil.Process(os.getpid())
+                    mem_bytes = process.memory_info().rss
+                    self.server_memory_mb = mem_bytes / (1024 * 1024)
+                else:
+                    self.server_memory_mb = 0.0
                 
                 self.is_memory_warning = self.server_memory_mb > SOFT_MEMORY_LIMIT_MB
                 self.is_memory_critical = self.server_memory_mb > HARD_MEMORY_LIMIT_MB
@@ -2354,6 +2483,12 @@ class PacketServer:
             self.auth_nonces[nonce] = now
             return device_id if device_id else True
             
+        print(f"❌ AUTH FAILURE from {device_id if device_id else 'unknown'}:")
+        print(f"  Path: '{path}'")
+        print(f"  Timestamp: {timestamp_str} (Now: {now}, Diff: {abs(now - timestamp)})")
+        print(f"  Payload: '{payload}'")
+        print(f"  Expected Signature: {expected_sig}")
+        print(f"  Received Signature: {signature}")
         return False
 
     @staticmethod
@@ -2487,44 +2622,134 @@ class PacketServer:
                     response = self.build_http_response(405, "Only GET is supported\n")
                     status_code = 405
                 elif path in {"/", "/health", "/healthz"}:
-                    if not self.is_authorized_app_request(target, headers):
-                        status_code = 401
-                        response = self.build_http_response(
-                            401,
-                            "Unauthorized. Application Only.\n",
-                        )
-                    else:
-                        body = json.dumps(
-                            {
-                                "status": "running",
-                                "websocket_port": self.port,
-                                "http_port": self.http_port,
-                                "local_ip": get_local_ip(),
-                            },
-                            indent=2,
-                        ) + "\n"
-                        response = self.build_http_response(
-                            200,
-                            body,
-                            content_type="application/json; charset=utf-8",
-                        )
-                elif path == "/status":
-                    if not self.is_authorized_app_request(target, headers):
-                        status_code = 401
-                        response = self.build_http_response(
-                            401,
-                            "Unauthorized. Application Only.\n",
-                        )
-                    else:
-                        body = json.dumps(self.build_status_payload(), indent=2) + "\n"
-                        response = self.build_http_response(
-                            200,
-                            body,
-                            content_type="application/json; charset=utf-8",
-                        )
+                    # Premium Forbidden HTML page
+                    html_content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Restricted | Firewall Log Analyzer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f1115;
+            --surface: #1a1d23;
+            --primary: #6366f1;
+            --secondary: #a855f7;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --danger: #ef4444;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            text-align: center;
+            z-index: 10;
+            padding: 2rem;
+            max-width: 500px;
+        }
+        .shield-icon {
+            font-size: 80px;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 15px rgba(99, 102, 241, 0.4));
+            animation: pulse 2s infinite ease-in-out;
+        }
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+        p {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 2.5rem;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            padding: 8px 16px;
+            border-radius: 99px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--danger);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--danger);
+        }
+        .glow {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: -1;
+            filter: blur(40px);
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+    </style>
+</head>
+<body>
+    <div class="glow"></div>
+    <div class="container">
+        <div class="shield-icon">🛡️</div>
+        <h1>Restricted Access</h1>
+        <p>This domain is restricted for unauthorized access. The Firewall Log Analyzer is currently monitoring this endpoint.</p>
+        <div class="status-badge">
+            <span class="dot"></span>
+            SECURITY MONITORING ACTIVE
+        </div>
+    </div>
+</body>
+</html>"""
+                if path == "/status" and self.is_authorized_app_request(target, headers):
+                    body = json.dumps(self.build_status_payload(), indent=2) + "\n"
+                    response = self.build_http_response(
+                        200,
+                        body,
+                        content_type="application/json; charset=utf-8",
+                    )
+                elif path == "/app_usage" and self.is_authorized_app_request(target, headers):
+                    body = json.dumps({
+                        "type": "app_usage_data",
+                        "timestamp": iso_now(),
+                        "apps": get_app_usage_data()
+                    }, indent=2) + "\n"
+                    response = self.build_http_response(
+                        200,
+                        body,
+                        content_type="application/json; charset=utf-8",
+                    )
                 else:
-                    response = self.build_http_response(404, "Not found\n")
-                    status_code = 404
+                    # Default: Show restricted access page for root, unknown paths, or unauthorized requests
+                    response = self.build_http_response(
+                        200,
+                        html_content,
+                        content_type="text/html; charset=utf-8",
+                    )
 
             writer.write(response)
             await writer.drain()
@@ -2534,6 +2759,9 @@ class PacketServer:
             status_code = 400
         except Exception as error:
             status_code = 500
+            import traceback
+            print(f"❌ HTTP 500 Error: {error}")
+            traceback.print_exc()
             with contextlib.suppress(Exception):
                 writer.write(self.build_http_response(500, f"Server error: {error}\n"))
                 await writer.drain()
@@ -2630,7 +2858,7 @@ class PacketServer:
             if self.telegram_command_thread is None:
                 self.telegram_command_thread = threading.Thread(
                     target=telegram_command_worker,
-                    args=(self.telegram_command_stop,),
+                    args=(self, self.telegram_command_stop,),
                     name="telegram-command-worker",
                     daemon=True,
                 )
@@ -2788,7 +3016,13 @@ class PacketServer:
         }
         self.active_clients.append(client_info)
         client_label = f"{ip} ({handshake_device_id or 'unknown'})"
-        print(f"Client connected: {client_label}")
+        print(f"DEBUG: Client connected: {client_label}. Total active: {len(self.active_clients)}")
+        
+        # Verify if there are other clients from the same IP or Device ID
+        others = [c for c in self.active_clients if c != client_info and (c['ip'] == ip or (c['device_id'] and c['device_id'] == handshake_device_id))]
+        if others:
+            print(f"DEBUG: Found {len(others)} other connection(s) from same IP/DeviceID: {ip}/{handshake_device_id}")
+
         await self.send_json(websocket, self.build_status_payload())
 
         try:
@@ -2858,6 +3092,12 @@ class PacketServer:
             
             print(f"Device registered: {device_info.get('name', 'Unknown')} ({device_id}) from {client_info['ip']}")
             await self.send_json(websocket, {"type": "device_registered", "success": True})
+        elif action == "get_app_usage":
+            await self.send_json(websocket, {
+                "type": "app_usage_data",
+                "timestamp": iso_now(),
+                "apps": get_app_usage_data()
+            })
         elif action == "get_history":
             history_type = payload.get("history_type", "packet")
             source = payload.get("source")
@@ -3008,12 +3248,8 @@ class PacketServer:
         
         self.logs_processed += 1
         
-        # Insane Mode Enhancements
+        # GeoIP lookup removed
         src = log_payload.get("sourceIp") or log_payload.get("ipAddress")
-        if src and type(src) == str:
-            geo_info = get_geoip(src)
-            if geo_info:
-                log_payload.update(geo_info)
                 
         alerts = analyze_for_threats(log_payload)
         if alerts:
@@ -3138,6 +3374,51 @@ class PacketServer:
         while True:
             await asyncio.sleep(self.status_interval)
             self._refresh_connection_metrics()
+            
+            # App Usage Anomaly Detection
+            apps = get_app_usage_data()
+            for app in apps[:5]:
+                # Alert if CPU > 80% or Memory > 30%
+                if app['cpuUsage'] > 80.0 or app['memoryUsage'] > 30.0:
+                    app_key = f"app_alert_{app['name']}"
+                    last_alert = self.threat_notification_cooldowns.get(app_key, 0.0)
+                    if time.time() - last_alert > 300: # 5 min cooldown
+                        send_alert(
+                            f"🚨 *HIGH RESOURCE ALERT*\n\n"
+                            f"Process: `{app['name']}`\n"
+                            f"PID: {app['pid']}\n"
+                            f"CPU: {app['cpuUsage']}%\n"
+                            f"MEM: {app['memoryUsage']}%"
+                        )
+                        self.threat_notification_cooldowns[app_key] = time.time()
+
+            # Periodically push status to FCM for background widget updates
+            # Every 15 minutes (900 seconds)
+            if FIREBASE_AVAILABLE:
+                last_push = getattr(self, "_last_widget_push", 0.0)
+                if time.time() - last_push > 900:
+                    self._last_widget_push = time.time()
+                    status = self.build_status_payload()
+                    containers = status.get('dockerContainers', [])
+                    running_docker = len([c for c in containers if c.get('state') == 'running'])
+                    total_docker = len(containers)
+                    
+                    for token in load_registered_fcm_tokens():
+                        send_firebase_notification(
+                            token,
+                            "Widget Update",
+                            "Background status sync",
+                            level="info",
+                            event_type="widget_update",
+                            extra_data={
+                                "battery": str(status["batteryPercent"]),
+                                "temp": str(status.get("cpuTemp") or ""),
+                                "ssh": str(status["sshConnections"]),
+                                "docker_running": str(running_docker),
+                                "docker_total": str(total_docker),
+                            }
+                        )
+
             payload = self.build_status_payload()
             await self.broadcast_json(payload)
 
@@ -3145,10 +3426,7 @@ class PacketServer:
         clients_info = []
         for client in self.active_clients:
             ip = client.get('ip', 'unknown')
-            geo = get_geoip(ip)
-            location = f"{geo.get('city', '')}, {geo.get('country', '')}".strip(', ')
-            if not location:
-                location = 'Unknown'
+            location = 'Unknown'
             
             device_name = client.get('device', 'Unknown Device')
             device_model = client.get('device_model', 'Unknown')
@@ -3176,10 +3454,7 @@ class PacketServer:
         unique_devices = {}
         for device_id, device in registered_devices.items():
             ip = device.get('ip', 'unknown')
-            geo = get_geoip(ip)
-            location = f"{geo.get('city', '')}, {geo.get('country', '')}".strip(', ')
-            if not location:
-                location = 'Unknown'
+            location = 'Unknown'
             
             key = device.get('device', 'Unknown Device')
             if key not in unique_devices:
@@ -3201,7 +3476,18 @@ class PacketServer:
 
     def build_status_payload(self) -> Dict[str, object]:
         memory_info = get_memory_info()
-        disk = shutil.disk_usage("/")
+        
+        # Robust disk usage (handling Windows paths)
+        try:
+            root_path = "C:\\" if platform.system() == "Windows" else "/"
+            disk = shutil.disk_usage(root_path)
+            disk_total = round(disk.total / (1024**3), 1)
+            disk_used = round(disk.used / (1024**3), 1)
+            disk_percent = round((disk.used / disk.total) * 100, 1) if disk.total else 0.0
+        except Exception:
+            disk_total = 0.0
+            disk_used = 0.0
+            disk_percent = 0.0
         uptime_seconds = get_uptime_seconds()
         battery_info = dict(self.cached_battery_info)
         cloud_status = get_cloud_status()
@@ -3226,6 +3512,7 @@ class PacketServer:
             "cpuModel": platform.processor() or "Unknown",
             "cpuCores": psutil.cpu_count(logical=True) if psutil is not None else (os.cpu_count() or 1),
             "cpuUsagePercent": get_cpu_usage_percent(),
+            "cpuTemp": get_cpu_temperature(),
             "memoryTotalMb": memory_info["memoryTotalMb"],
             "memoryUsedMb": memory_info["memoryUsedMb"],
             "memoryUsagePercent": memory_info["memoryUsagePercent"],

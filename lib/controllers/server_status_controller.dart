@@ -6,9 +6,12 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/app_usage.dart';
 import '../models/server_status_snapshot.dart';
-import '../services/authenticated_websocket_channel.dart';
+import '../services/authenticated_websocket_channel_io.dart';
 import '../services/device_id_service.dart';
+import '../services/home_widget_service.dart';
 import '../services/network_utils.dart';
 import '../services/server_status_parser.dart';
 import '../services/server_status_service.dart';
@@ -29,7 +32,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
         urlController = TextEditingController(text: initialWebSocketUrl) {
     urlController.addListener(_handleUrlChanged);
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_loadSavedUrl());
+    unawaited(_loadSavedConfig());
   }
 
   final String _initialWebSocketUrl;
@@ -43,6 +46,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
 
   List<String> _urlOptions = const [];
   ServerStatusSnapshot? _snapshot;
+  List<AppUsage> _appUsage = const [];
   bool _isDisposed = false;
   bool _isLoading = false;
   bool _isConnectingSocket = false;
@@ -55,6 +59,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
 
   List<String> get urlOptions => _urlOptions;
   ServerStatusSnapshot? get snapshot => _snapshot;
+  List<AppUsage> get appUsage => _appUsage;
   bool get isLoading => _isLoading;
   bool get isConnectingSocket => _isConnectingSocket;
   bool get isSocketConnected => _isSocketConnected;
@@ -85,6 +90,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
       return;
     }
 
+    /* 
     if (isPrivateNetworkWebSocketHost(websocketUri) ||
         isLocalOnlyWebSocketHost(websocketUri)) {
       onMessage?.call(
@@ -92,6 +98,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
       );
       return;
     }
+    */
 
     final websocketUrl = websocketUri.toString();
     final nextStatusUri = statusUriForWebSocketUri(websocketUri);
@@ -147,6 +154,38 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
     _statusMessage = 'Refreshing ${nextStatusUri.toString()}';
     _notifySafely();
     await _loadStatusSnapshot(nextStatusUri, onMessage: onMessage);
+  }
+
+  Future<void> loadAppUsage({ValueChanged<String>? onMessage}) async {
+    final nextStatusUri = statusUri;
+    if (nextStatusUri == null) {
+      onMessage?.call('Enter a valid WebSocket URL first.');
+      return;
+    }
+
+    if (_isSocketConnected && _channel != null) {
+      _requestAppUsageRefresh();
+      return;
+    }
+
+    _isLoading = true;
+    _statusMessage = 'Refreshing App Usage';
+    _notifySafely();
+    
+    try {
+      final nextAppUsage = await _statusService.fetchAppUsage(nextStatusUri);
+      if (_isDisposed) return;
+      _appUsage = nextAppUsage;
+      _isLoading = false;
+      _statusMessage = 'Loaded app usage';
+      _notifySafely();
+    } catch (error) {
+      if (_isDisposed) return;
+      _isLoading = false;
+      _statusMessage = 'App usage request failed: $error';
+      _notifySafely();
+      onMessage?.call('Unable to load app usage from $nextStatusUri');
+    }
   }
 
   Future<void> disconnect({bool updateStateOnly = false}) async {
@@ -225,7 +264,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
     return urls.toList(growable: false);
   }
 
-  Future<void> _loadSavedUrl() async {
+  Future<void> _loadSavedConfig() async {
     final initialUrl = _initialWebSocketUrl.trim();
     if (initialUrl.isNotEmpty) {
       await WebSocketUrlStore.save(initialUrl);
@@ -235,25 +274,28 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
         initialUrl.isNotEmpty ? initialUrl : await WebSocketUrlStore.load();
     final validSavedUrl = () {
       final parsed = parseWebSocketUri(savedUrl);
-      return parsed != null &&
-              !isPrivateNetworkWebSocketHost(parsed) &&
-              !isLocalOnlyWebSocketHost(parsed)
-          ? savedUrl
-          : defaultWebSocketUrl;
+      return parsed != null ? savedUrl : defaultWebSocketUrl;
     }();
     final recentUrls = await WebSocketUrlStore.loadRecent();
-    if (_isDisposed) {
-      return;
-    }
-
+    
+    if (_isDisposed) return;
+    
     if (urlController.text.trim().isEmpty && validSavedUrl.isNotEmpty) {
       urlController.text = validSavedUrl;
     }
+    
     _urlOptions = _buildUrlOptions(
       savedUrl: validSavedUrl,
       recentUrls: recentUrls,
       currentUrl: urlController.text.trim(),
     );
+
+    _urlOptions = _buildUrlOptions(
+      savedUrl: validSavedUrl,
+      recentUrls: recentUrls,
+      currentUrl: urlController.text.trim(),
+    );
+    
     _notifySafely();
 
     if (!_isLoading && urlController.text.trim().isNotEmpty) {
@@ -318,6 +360,13 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
             return;
           }
 
+          if (decoded['type'] == 'app_usage_data') {
+            final List<dynamic> appsJson = decoded['apps'] ?? [];
+            _appUsage = appsJson.map((json) => AppUsage.fromJson(json)).toList();
+            _notifySafely();
+            return;
+          }
+
           final nextSnapshot = ServerStatusParser.parse(message);
           if (nextSnapshot == null || _isDisposed) {
             return;
@@ -327,23 +376,31 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
           _notifySafely();
         },
         onError: (error) {
-          if (_isDisposed) {
-            return;
-          }
+          if (_isDisposed) return;
           _isSocketConnected = false;
           _isConnectingSocket = false;
           _statusMessage = 'Live status socket error: $error';
           _notifySafely();
+          HomeWidgetService.updateBatteryWidget(
+            batteryPercent: _snapshot?.batteryPercent,
+            status: 'Offline',
+            temperature: _snapshot?.cpuTemp,
+            sshCount: _snapshot?.sshConnections ?? 0,
+          );
           _scheduleReconnect();
         },
         onDone: () {
-          if (_isDisposed) {
-            return;
-          }
+          if (_isDisposed) return;
           _isSocketConnected = false;
           _isConnectingSocket = false;
           _statusMessage = 'Live status socket closed';
           _notifySafely();
+          HomeWidgetService.updateBatteryWidget(
+            batteryPercent: _snapshot?.batteryPercent,
+            status: 'Offline',
+            temperature: _snapshot?.cpuTemp,
+            sshCount: _snapshot?.sshConnections ?? 0,
+          );
           _scheduleReconnect();
         },
         cancelOnError: false,
@@ -402,6 +459,12 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
     } catch (_) {}
   }
 
+  void _requestAppUsageRefresh() {
+    try {
+      _channel?.sink.add(jsonEncode(const {'action': 'get_app_usage'}));
+    } catch (_) {}
+  }
+
   Future<void> _registerDevice(WebSocketChannel channel) async {
     try {
       final deviceInfo = DeviceInfoPlugin();
@@ -427,6 +490,16 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
           'model': iosInfo.model ?? 'Unknown',
           'systemVersion': iosInfo.systemVersion ?? 'Unknown',
           'platform': 'iOS',
+        };
+      } else if (Platform.isWindows) {
+        final windowsInfo = await deviceInfo.windowsInfo;
+        deviceData = {
+          'name': windowsInfo.computerName,
+          'model': 'Windows PC',
+          'manufacturer': 'PC',
+          'platform': 'Windows',
+          'computerName': windowsInfo.computerName,
+          'deviceId': windowsInfo.deviceId,
         };
       }
 
@@ -477,9 +550,50 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
     _notifySafely();
   }
 
+  // Time-based widget refresh: always save prefs, redraw every 15s
+  DateTime _lastWidgetRedraw = DateTime(2000);
+  static const _widgetRedrawInterval = Duration(seconds: 15);
+
   void _notifySafely() {
-    if (!_isDisposed) {
-      notifyListeners();
+    if (_isDisposed) return;
+    notifyListeners();
+    
+    // Widget sync — wrapped in try-catch so native widget errors never crash the app
+    final snap = _snapshot;
+    if (snap == null) return;
+
+    try {
+      final status = _isSocketConnected ? 'Online' : 'Offline';
+      final containers = snap.dockerContainers ?? [];
+      final runningCount = containers.where((c) => c['state'] == 'running').length;
+      final totalCount = containers.length;
+
+      // Always persist latest data to SharedPreferences (cheap)
+      unawaited(HomeWidgetService.saveBatteryWidgetData(
+        batteryPercent: snap.batteryPercent,
+        status: status,
+        temperature: snap.cpuTemp,
+        sshCount: snap.sshConnections,
+      ).catchError((e) => debugPrint('⚠️ Battery save error: $e')));
+
+      unawaited(HomeWidgetService.saveDockerWidgetData(
+        runningCount: runningCount,
+        totalCount: totalCount,
+        status: status,
+      ).catchError((e) => debugPrint('⚠️ Docker save error: $e')));
+
+      // Trigger native RemoteViews redraw on a timer (every 15s)
+      final now = DateTime.now();
+      if (now.difference(_lastWidgetRedraw) >= _widgetRedrawInterval) {
+        _lastWidgetRedraw = now;
+        debugPrint('🔄 Widget redraw: ${snap.batteryPercent}% | $status');
+        unawaited(HomeWidgetService.refreshBatteryWidget()
+            .catchError((e) => debugPrint('⚠️ Battery refresh error: $e')));
+        unawaited(HomeWidgetService.refreshDockerWidget()
+            .catchError((e) => debugPrint('⚠️ Docker refresh error: $e')));
+      }
+    } catch (e) {
+      debugPrint('⚠️ Widget sync error (non-fatal): $e');
     }
   }
 
