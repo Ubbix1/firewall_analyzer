@@ -8,6 +8,8 @@ import '../constants/server_log_sources.dart';
 import '../controllers/home_screen_controller.dart';
 import '../models/firewall_log.dart';
 import '../services/log_analysis_service.dart';
+import '../services/filtered_data_store_service.dart';
+import 'filtered_stores_dialog.dart';
 import 'log_entry_tile.dart';
 
 /// The full-screen "Logs" tab content.
@@ -104,22 +106,32 @@ class _LogListViewState extends State<LogListView> {
                       : null,
                 ),
 
-              // ── Stats Dashboard ───────────────────────────────────────────
-              _buildStatsDashboard(context, suspiciousCount),
-
               // ── Control Panel ─────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 3,
                       child: _buildLogSourceDropdown(context, selectedSource),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: _buildViewFilterDropdown(context),
+                    IconButton(
+                      tooltip: 'Save filtered to JSON',
+                      icon: const Icon(Icons.save_alt, size: 20),
+                      onPressed: ctrl.filteredLogs.isEmpty ? null : () async {
+                        final path = await FilteredDataStoreService.saveFilteredData(
+                          selectedSource?.label ?? 'logs',
+                          ctrl.filteredLogs,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to $path')));
+                        }
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'View JSON Stores',
+                      icon: const Icon(Icons.folder_open, size: 20),
+                      onPressed: () => showDialog(context: context, builder: (_) => const FilteredStoresDialog()),
                     ),
                     const SizedBox(width: 4),
                     if (ctrl.isLoading)
@@ -193,96 +205,7 @@ class _LogListViewState extends State<LogListView> {
     );
   }
 
-  Widget _buildStatsDashboard(BuildContext context, int suspiciousCount) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Security Overview',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildStatCard(
-                  context,
-                  'Total Logs',
-                  ctrl.logs.length.toString(),
-                  Icons.article_outlined,
-                  Colors.blue,
-                ),
-                _buildStatCard(
-                  context,
-                  'Suspicious',
-                  suspiciousCount.toString(),
-                  Icons.security_update_warning_outlined,
-                  Colors.redAccent,
-                ),
-                _buildStatCard(
-                  context,
-                  'Filtered',
-                  ctrl.filteredLogs.length.toString(),
-                  Icons.filter_list_alt,
-                  Colors.orange,
-                ),
-                _buildStatCard(
-                  context,
-                  'Visible',
-                  ctrl.visibleLogs.length.toString(),
-                  Icons.visibility_outlined,
-                  Colors.green,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildStatCard(BuildContext context, String label, String value, IconData icon, Color color) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      width: 90,
-      margin: const EdgeInsets.only(right: 6),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.12 : 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 14),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: color,
-              fontSize: 13,
-            ),
-          ),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: 9,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildLogSourceDropdown(BuildContext context, ServerLogSource? selectedSource) {
     return DropdownButtonFormField<String>(
@@ -319,29 +242,7 @@ class _LogListViewState extends State<LogListView> {
     );
   }
 
-  Widget _buildViewFilterDropdown(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      value: ctrl.logViewFilter,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: 'View',
-        prefixIcon: const Icon(Icons.auto_awesome_mosaic_outlined, size: 18),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-      ),
-      items: HomeScreenController.logViewOptions.map((opt) => DropdownMenuItem(
-        value: opt,
-        child: Text(
-          opt, 
-          style: const TextStyle(fontSize: 12),
-          overflow: TextOverflow.ellipsis,
-        ),
-      )).toList(),
-      onChanged: (value) {
-        if (value != null) ctrl.setLogViewFilter(value);
-      },
-    );
-  }
+
 
   Widget _buildSyncStatus(BuildContext context, ServerLogSource? selectedSource) {
     return Padding(

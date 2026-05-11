@@ -387,6 +387,42 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 onPressed: () => unawaited(_ctrl.uploadLogs()),
                 icon: const Icon(Icons.upload_file),
               ),
+              PopupMenuButton<String>(
+                tooltip: 'More options',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'export_csv':
+                      unawaited(_exportLogs(false));
+                      break;
+                    case 'export_pdf':
+                      unawaited(_exportLogs(true));
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'export_csv',
+                    child: Row(
+                      children: [
+                        Icon(Icons.file_download, size: 18),
+                        SizedBox(width: 12),
+                        Text('Export CSV'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'export_pdf',
+                    child: Row(
+                      children: [
+                        Icon(Icons.picture_as_pdf, size: 18),
+                        SizedBox(width: 12),
+                        Text('Export PDF'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
 
@@ -415,61 +451,12 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onPressed: _openUserClient,
               icon: const Icon(Icons.group),
             ),
+            IconButton(
+              tooltip: 'Settings',
+              onPressed: _openServerSettings,
+              icon: const Icon(Icons.settings),
+            ),
           ],
-
-          // ── global settings menu ───────────────────────────────────────────
-          PopupMenuButton<String>(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings),
-            onSelected: (value) {
-              switch (value) {
-                case 'server_settings':
-                  _openServerSettings();
-                  break;
-                case 'export_csv':
-                  unawaited(_exportLogs(false));
-                  break;
-                case 'export_pdf':
-                  unawaited(_exportLogs(true));
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'server_settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.dns, size: 18),
-                    const SizedBox(width: 12),
-                    Text('Server Settings'),
-                  ],
-                ),
-              ),
-              if (_selectedIndex == 0) ...[
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'export_csv',
-                  child: Row(
-                    children: [
-                      Icon(Icons.file_download, size: 18),
-                      const SizedBox(width: 12),
-                      Text('Export CSV'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'export_pdf',
-                  child: Row(
-                    children: [
-                      Icon(Icons.picture_as_pdf, size: 18),
-                      const SizedBox(width: 12),
-                      Text('Export PDF'),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
         ];
 
         const navDestinations = <(IconData, String)>[

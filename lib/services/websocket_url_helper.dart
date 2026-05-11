@@ -64,11 +64,15 @@ Uri normalizeWebSocketEndpointUri(Uri uri) {
   final effectivePort = port == 0 ? (normalizedScheme == 'wss' ? 443 : 80) : port;
   final path = _normalizeWebSocketPath(uri.path);
 
+  // Don't explicitly pass port 443 for wss or 80 for ws, so it formats nicely without :443
+  final isDefaultPort = (normalizedScheme == 'wss' && effectivePort == 443) ||
+      (normalizedScheme == 'ws' && effectivePort == 80);
+
   return Uri(
     scheme: normalizedScheme,
     userInfo: uri.userInfo,
     host: uri.host,
-    port: effectivePort,
+    port: isDefaultPort ? null : effectivePort,
     path: path,
   );
 }

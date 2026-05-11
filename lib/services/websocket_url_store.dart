@@ -13,6 +13,14 @@ class WebSocketUrlStore {
   static Future<String> load() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString(_key)?.trim() ?? '';
+    
+    // Migrate old hardcoded default to the new subdomain default
+    if (savedUrl == 'ws://192.168.29.77:8765' || savedUrl == 'ws://\$defaultServerIp:8765') {
+      final defaultUrl = defaultWebSocketUrl;
+      await save(defaultUrl);
+      return defaultUrl;
+    }
+
     if (savedUrl.isNotEmpty) {
       final parsed = parseWebSocketUri(savedUrl);
       if (parsed != null) {
@@ -20,7 +28,7 @@ class WebSocketUrlStore {
       }
     }
 
-    final defaultUrl = 'ws://$defaultServerIp:8765';
+    final defaultUrl = defaultWebSocketUrl;
     await save(defaultUrl);
     return defaultUrl;
   }

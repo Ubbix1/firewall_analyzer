@@ -38,7 +38,7 @@ void showDashboardDialog(
   showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Summary Dashboard'),
+      title: const Text('Dashboard'),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(

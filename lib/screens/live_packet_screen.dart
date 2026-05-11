@@ -21,19 +21,40 @@ class LivePacketScreen extends StatefulWidget {
 class _LivePacketScreenState extends State<LivePacketScreen> {
   final TextEditingController _urlController = TextEditingController();
   bool _showSuspiciousOnly = false;
+  
+  // Stats tracking
+  int _packetsLastSecond = 0;
+  double _pps = 0.0;
+  Timer? _ppsTimer;
 
   @override
   void initState() {
     super.initState();
     _loadUrl();
     widget.controller.addListener(_onControllerUpdate);
+    _startStatsTimer();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerUpdate);
+    _ppsTimer?.cancel();
     _urlController.dispose();
     super.dispose();
+  }
+
+  void _startStatsTimer() {
+    _ppsTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      final now = DateTime.now();
+      final lastSecondPackets = widget.controller.packets.where((p) => 
+        now.difference(p.receivedAt).inSeconds < 1
+      ).length;
+      
+      setState(() {
+        _pps = lastSecondPackets.toDouble();
+      });
+    });
   }
 
   void _onControllerUpdate() {
@@ -66,139 +87,185 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
           }).toList()
         : ctrl.packets;
 
+    final criticalCount = ctrl.packets.where((p) {
+      final risk = LogAnalysisService.analyze(p.log).riskLevel;
+      return risk == 'Critical' || risk == 'High';
+    }).length;
+
+    return Container(
+      color: theme.colorScheme.background,
+      child: Column(
+        children: [
+          _buildConnectionHeader(theme, ctrl),
+          if (ctrl.isConnected) ...[
+            _buildLiveStatsStrip(theme, ctrl.packets.length, criticalCount),
+            _buildFilterBar(theme),
+            RepaintBoundary(child: PacketChartWidget(packets: ctrl.packets)),
+            Expanded(
+              child: displayedPackets.isEmpty
+                  ? _buildEmptyState(theme, _showSuspiciousOnly)
+                  : ListView.builder(
+                      itemCount: displayedPackets.length,
+                      padding: const EdgeInsets.only(top: 4, bottom: 80),
+                      cacheExtent: 1000,
+                      itemBuilder: (context, index) {
+                        return _PacketListTile(
+                          key: ValueKey(displayedPackets[index].id),
+                          packet: displayedPackets[index],
+                          onTap: () => _showPacketDetails(context, displayedPackets[index]),
+                        );
+                      },
+                    ),
+            ),
+          ] else
+            Expanded(
+              child: _buildDisconnectedState(theme, ctrl),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveStatsStrip(ThemeData theme, int total, int critical) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.dividerColor.withOpacity(0.05))),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem('TOTAL', total.toString(), theme.colorScheme.primary),
+          _buildStatItem('CRITICAL', critical.toString(), Colors.redAccent),
+          _buildStatItem('RATE', '${_pps.toInt()} p/s', Colors.cyanAccent),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, Color color) {
     return Column(
       children: [
-        _buildConnectionHeader(theme, ctrl),
-        if (ctrl.isConnected) ...[
-        _buildFilterBar(theme),
-        RepaintBoundary(child: PacketChartWidget(packets: displayedPackets)),
-        Expanded(
-          child: displayedPackets.isEmpty
-              ? _buildEmptyState(theme, _showSuspiciousOnly)
-              : ListView.builder(
-                  itemCount: displayedPackets.length,
-                  padding: const EdgeInsets.only(top: 8, bottom: 80),
-                  cacheExtent: 500, // Optimize scrolling
-                  itemBuilder: (context, index) {
-                    return _PacketListTile(
-                      key: ValueKey(displayedPackets[index].id),
-                      packet: displayedPackets[index],
-                      onTap: () => _showPacketDetails(context, displayedPackets[index]),
-                    );
-                  },
-                ),
-        ),
-        ] else
-          Expanded(
-            child: _buildDisconnectedState(theme, ctrl),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+            color: color.withOpacity(0.6),
           ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'monospace',
+            color: color,
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildFilterBar(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Row(
         children: [
-          FilterChip(
-            label: const Text('All Traffic'),
-            selected: !_showSuspiciousOnly,
-            onSelected: (val) => setState(() => _showSuspiciousOnly = false),
-            visualDensity: VisualDensity.compact,
-          ),
-          const SizedBox(width: 8),
-          FilterChip(
-            label: const Text('Suspicious'),
-            selected: _showSuspiciousOnly,
-            onSelected: (val) => setState(() => _showSuspiciousOnly = true),
-            selectedColor: theme.colorScheme.errorContainer,
-            visualDensity: VisualDensity.compact,
-          ),
+          _buildMinimalFilterChip('ALL TRAFFIC', !_showSuspiciousOnly, () => setState(() => _showSuspiciousOnly = false)),
+          const SizedBox(width: 12),
+          _buildMinimalFilterChip('SUSPICIOUS', _showSuspiciousOnly, () => setState(() => _showSuspiciousOnly = true), isAlert: true),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMinimalFilterChip(String label, bool isSelected, VoidCallback onTap, {bool isAlert = false}) {
+    final theme = Theme.of(context);
+    final color = isAlert ? Colors.redAccent : theme.colorScheme.primary;
+    
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isSelected ? color.withOpacity(0.3) : theme.dividerColor.withOpacity(0.1),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+            color: isSelected ? color : theme.hintColor,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildConnectionHeader(ThemeData theme, LiveController ctrl) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.1),
+        border: Border(bottom: BorderSide(color: theme.dividerColor.withOpacity(0.1))),
       ),
       child: Row(
         children: [
-          Icon(
-            ctrl.isConnected ? Icons.sensors : Icons.sensors_off,
-            color: ctrl.isConnected ? Colors.green : theme.disabledColor,
-            size: 18,
-          ),
-          const SizedBox(width: 12),
+          _PulseIndicator(color: ctrl.isConnected ? (ctrl.isSniffing ? Colors.greenAccent : Colors.amberAccent) : Colors.grey),
+          const SizedBox(width: 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
+                  ctrl.isConnected ? 'LIVE MONITOR ACTIVE' : 'MONITOR OFFLINE',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                    fontSize: 10,
+                    color: ctrl.isConnected ? Colors.greenAccent : theme.hintColor,
+                  ),
+                ),
+                Text(
                   ctrl.statusMessage,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: ctrl.isConnected ? theme.colorScheme.primary : null,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.hintColor.withOpacity(0.7),
+                    fontSize: 10,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (ctrl.isConnected)
-                  Text(
-                    'Uptime: ${ctrl.connectedDuration}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.hintColor,
-                      fontSize: 9,
-                    ),
-                  ),
               ],
             ),
           ),
           if (ctrl.isConnected) ...[
-            _PulseIndicator(color: ctrl.isSniffing ? Colors.green : Colors.grey),
-            const SizedBox(width: 8),
-            SizedBox(
-              height: 32,
-              child: FilledButton.tonalIcon(
-                onPressed: ctrl.isSniffing ? ctrl.stopSniffing : ctrl.startSniffing,
-                icon: Icon(ctrl.isSniffing ? Icons.stop : Icons.play_arrow, size: 16),
-                label: Text(ctrl.isSniffing ? 'STOP' : 'START'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: ctrl.isSniffing 
-                      ? theme.colorScheme.errorContainer 
-                      : theme.colorScheme.primaryContainer,
-                  foregroundColor: ctrl.isSniffing 
-                      ? theme.colorScheme.error 
-                      : theme.colorScheme.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ),
+            IconButton(
+              onPressed: ctrl.isSniffing ? ctrl.stopSniffing : ctrl.startSniffing,
+              icon: Icon(ctrl.isSniffing ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+              color: ctrl.isSniffing ? Colors.redAccent : Colors.greenAccent,
+              tooltip: ctrl.isSniffing ? 'Stop Sniffing' : 'Start Sniffing',
             ),
             IconButton(
               onPressed: () => _saveSnapshot(ctrl),
-              icon: const Icon(Icons.save_alt, size: 20),
+              icon: const Icon(Icons.screenshot_outlined),
               tooltip: 'Save Snapshot',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              visualDensity: VisualDensity.compact,
               color: theme.colorScheme.primary,
             ),
-            const SizedBox(width: 4),
             IconButton(
               onPressed: () => ctrl.disconnect(),
-              icon: const Icon(Icons.power_settings_new, size: 20),
+              icon: const Icon(Icons.power_settings_new_outlined),
               tooltip: 'Disconnect',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              visualDensity: VisualDensity.compact,
-              color: theme.colorScheme.error,
+              color: Colors.redAccent.withOpacity(0.7),
             ),
           ],
         ],
@@ -208,10 +275,7 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
 
   Future<void> _saveSnapshot(LiveController ctrl) async {
     if (ctrl.packets.isEmpty) return;
-
     final snapshotName = 'Live_${DateFormat('MMdd_HHmm').format(DateTime.now())}';
-    
-    // Auto-filter for suspicious packets if requested, or just save current view
     final packetsToSave = _showSuspiciousOnly 
         ? ctrl.packets.where((p) {
             final risk = LogAnalysisService.analyze(p.log).riskLevel;
@@ -220,20 +284,14 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
         : ctrl.packets;
 
     if (packetsToSave.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No suspicious packets to save!'))
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No packets to save!')));
       return;
     }
 
     await SavedAnalysisService.saveAnalysis(snapshotName, packetsToSave);
-    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Saved ${packetsToSave.length} packets to snapshot: $snapshotName'),
-          action: SnackBarAction(label: 'OK', onPressed: () {}),
-        ),
+        SnackBar(content: Text('Saved ${packetsToSave.length} packets to snapshot: $snapshotName'))
       );
     }
   }
@@ -241,73 +299,66 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
   Widget _buildDisconnectedState(ThemeData theme, LiveController ctrl) {
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(32),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lan_outlined, size: 64, color: theme.colorScheme.primary.withOpacity(0.2)),
-            const SizedBox(height: 24),
-            Text('Live Packet Feed', style: theme.textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              'Connect to a local packet server to see real-time firewall activity.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: theme.colorScheme.primary.withOpacity(0.05),
+              ),
+              child: Icon(Icons.router_outlined, size: 80, color: theme.colorScheme.primary.withOpacity(0.2)),
             ),
             const SizedBox(height: 32),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  side: BorderSide(color: theme.dividerColor),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+            Text('Packet Monitor', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w200, letterSpacing: 2)),
+            const SizedBox(height: 16),
+            Text(
+              'Connect to the security endpoint to begin real-time traffic analysis.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor, height: 1.5),
+            ),
+            const SizedBox(height: 48),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: theme.dividerColor.withOpacity(0.1)),
+                  ),
                   child: Column(
                     children: [
                       TextField(
                         controller: _urlController,
+                        style: const TextStyle(fontFamily: 'monospace'),
                         decoration: InputDecoration(
-                          labelText: 'Server WebSocket URL',
+                          labelText: 'WSS ENDPOINT',
                           hintText: 'ws://$defaultServerIp:8765',
-                          prefixIcon: const Icon(Icons.link),
+                          prefixIcon: const Icon(Icons.bolt, size: 20),
+                          labelStyle: const TextStyle(letterSpacing: 2, fontSize: 10, fontWeight: FontWeight.bold),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: ElevatedButton.icon(
-                              onPressed: ctrl.isConnecting ? null : () => ctrl.connect(_urlController.text.trim()),
-                              icon: ctrl.isConnecting
-                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : const Icon(Icons.play_arrow),
-                              label: Text(ctrl.isConnecting ? 'Connecting...' : 'Start Feed'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton(
+                          onPressed: ctrl.isConnecting ? null : () => ctrl.connect(_urlController.text.trim()),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
                           ),
-                          if (ctrl.isConnecting) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => ctrl.disconnect(),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: theme.colorScheme.error,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: const Text('Stop'),
-                              ),
-                            ),
-                          ],
-                        ],
+                          child: ctrl.isConnecting
+                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Text('INITIALIZE FEED', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
+                        ),
                       ),
                     ],
                   ),
@@ -325,21 +376,21 @@ class _LivePacketScreenState extends State<LivePacketScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (!isFiltered) ...[
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(
-              'Listening for incoming packets...',
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
+          const SizedBox(
+            width: 40,
+            height: 40,
+            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.cyanAccent)),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            isFiltered ? 'SCANNING FOR THREATS...' : 'AWAITING NETWORK TRAFFIC...',
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 2,
+              fontWeight: FontWeight.bold,
+              color: theme.hintColor.withOpacity(0.5),
             ),
-          ] else ...[
-            Icon(Icons.shield_outlined, size: 48, color: theme.hintColor),
-            const SizedBox(height: 16),
-            Text(
-              'No suspicious packets detected yet.',
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.hintColor),
-            ),
-          ],
+          ),
         ],
       ),
     );
@@ -366,177 +417,126 @@ class _PacketListTile extends StatelessWidget {
     final timeStr = DateFormat.Hms().format(packet.receivedAt);
     final isCritical = analysis.riskLevel == 'Critical' || analysis.riskLevel == 'High';
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        height: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        decoration: BoxDecoration(
-          color: isCritical ? theme.colorScheme.error.withOpacity(0.03) : null,
-          border: Border(bottom: BorderSide(color: theme.dividerColor, width: 0.5)),
-        ),
-        child: Row(
-          children: [
-            _buildSeverityIndicator(analysis.riskLevel),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: _getMethodColor(packet.log.method).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isCritical ? Colors.redAccent.withOpacity(0.05) : theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isCritical ? Colors.redAccent.withOpacity(0.2) : theme.dividerColor.withOpacity(0.05),
+            ),
+          ),
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                _buildSeverityBar(analysis.riskLevel),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            _buildMethodBadge(packet.log.method),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                packet.log.ipAddress,
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              timeStr,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: theme.hintColor,
+                                fontWeight: FontWeight.w300,
+                              ),
+                            ),
+                          ],
                         ),
-                        child: Text(
-                          packet.log.method.toUpperCase(),
+                        const SizedBox(height: 8),
+                        Text(
+                          packet.log.request,
                           style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: _getMethodColor(packet.log.method),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          packet.log.ipAddress,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurface.withOpacity(0.7),
                             fontFamily: 'monospace',
-                            fontSize: 13,
                           ),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      if (packet.log.backendAlerts?.isNotEmpty ?? false) ...[
-                        const SizedBox(width: 4),
-                        Icon(Icons.warning_amber_rounded, size: 12, color: Colors.orange.shade700),
                       ],
-                      const Spacer(),
-                      if (packet.log.source.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.onSurface.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            packet.log.source.toUpperCase(),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 7,
-                              color: theme.hintColor,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    packet.log.request,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
-                      fontSize: 11,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  timeStr,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.hintColor,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 9,
                   ),
                 ),
-                const SizedBox(height: 4),
-                _buildRiskChip(analysis.riskLevel, theme),
+                Icon(Icons.chevron_right, size: 16, color: theme.hintColor.withOpacity(0.3)),
+                const SizedBox(width: 8),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Color _getMethodColor(String method) {
-    switch (method.toUpperCase()) {
-      case 'GET': return Colors.blue;
-      case 'POST': return Colors.green;
-      case 'PUT': return Colors.orange;
-      case 'DELETE': return Colors.red;
-      default: return Colors.grey;
-    }
-  }
-
-  Widget _buildRiskChip(String level, ThemeData theme) {
+  Widget _buildMethodBadge(String method) {
     Color color;
-    switch (level) {
-      case 'Critical': color = Colors.red.shade900; break;
-      case 'High': color = Colors.red; break;
-      case 'Medium': color = Colors.orange; break;
-      default: color = Colors.green;
+    switch (method.toUpperCase()) {
+      case 'GET': color = Colors.blueAccent; break;
+      case 'POST': color = Colors.greenAccent; break;
+      case 'PUT': color = Colors.orangeAccent; break;
+      case 'DELETE': color = Colors.redAccent; break;
+      default: color = Colors.grey;
     }
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Text(
-        level.toUpperCase(),
-        style: TextStyle(
-          fontSize: 8,
-          fontWeight: FontWeight.w900,
-          color: color,
-        ),
+        method.toUpperCase(),
+        style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: color),
       ),
     );
   }
 
-  Widget _buildSeverityIndicator(String riskLevel) {
+  Widget _buildSeverityBar(String riskLevel) {
     Color color;
     switch (riskLevel) {
       case 'Critical': color = Colors.red.shade900; break;
-      case 'High': color = Colors.red; break;
-      case 'Medium': color = Colors.orange; break;
-      case 'Low':
-      default: color = Colors.green;
+      case 'High': color = Colors.redAccent; break;
+      case 'Medium': color = Colors.orangeAccent; break;
+      default: color = Colors.greenAccent;
     }
 
     return Container(
       width: 4,
-      height: 32,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
         boxShadow: [
           if (riskLevel == 'Critical' || riskLevel == 'High')
-            BoxShadow(
-              color: color.withOpacity(0.5),
-              blurRadius: 6,
-              spreadRadius: 1,
-            ),
+            BoxShadow(color: color.withOpacity(0.4), blurRadius: 8, spreadRadius: 1),
         ],
       ),
     );
   }
 }
+
 
 class _PulseIndicator extends StatefulWidget {
   final Color color;
