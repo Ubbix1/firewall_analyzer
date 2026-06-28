@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
+import '../widgets/connectivity_gate.dart';
 
 import '../controllers/server_status_controller.dart';
 import '../models/server_status_snapshot.dart';
@@ -28,48 +30,35 @@ class _CloudStatusScreenState extends State<CloudStatusScreen> {
         final isLoading = widget.controller.isLoading;
 
         if (snapshot == null) {
-          if (isLoading) {
+          if (isLoading || widget.controller.isConnectingSocket) {
             return _buildSkeleton(context);
           }
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.cloud_queue,
-                      size: 56,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Use the top-right settings icon to open Server Settings, connect to your endpoint, and load cloud status.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: widget.onOpenSettings,
-                      icon: const Icon(Icons.settings),
-                      label: const Text('Open Settings'),
-                    ),
-                  ],
-                ),
-              ),
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                SizedBox(height: 12),
+                Text('Cloud data unavailable'),
+                SizedBox(height: 4),
+                Text('Connecting to official endpoint...', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
             ),
           );
         }
 
-        return ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
-            _buildCloudStatusCard(context, snapshot),
-            const SizedBox(height: 16),
-            _buildDockerContainersSection(context, snapshot),
-          ],
+        return ConnectivityGate(
+          controller: widget.controller,
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              if (widget.controller.isUsingCache || widget.controller.isOffline)
+                _buildOfflineIndicator(context),
+              _buildCloudStatusCard(context, snapshot),
+              const SizedBox(height: 16),
+              _buildDockerContainersSection(context, snapshot),
+            ],
+          ),
         );
       },
     );
@@ -120,7 +109,9 @@ class _CloudStatusScreenState extends State<CloudStatusScreen> {
                   ),
             ),
             const SizedBox(height: 16),
-            ...snapshot.cloudStatus.entries.map(
+            ...snapshot.cloudStatus.entries
+                .where((entry) => entry.key != 'landing_page')
+                .map(
               (entry) => _buildCloudStatusItem(context, entry.key, entry.value),
             ),
           ],
@@ -364,5 +355,45 @@ class _CloudStatusScreenState extends State<CloudStatusScreen> {
     final normalizedState = state.toLowerCase().trim();
     final normalizedStatus = status.toLowerCase().trim();
     return normalizedState == 'running' || normalizedStatus.startsWith('up ');
+  }
+
+  Widget _buildOfflineIndicator(BuildContext context) {
+    final isOffline = widget.controller.isOffline;
+    final lastUpdate = widget.controller.lastCacheUpdate;
+    final timeAgo = lastUpdate != null
+        ? DateFormat.Hm().format(lastUpdate)
+        : 'Unknown';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isOffline ? Colors.red.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isOffline ? Icons.cloud_off : Icons.history,
+            color: Colors.white,
+            size: 16,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              isOffline
+                  ? 'Server Offline - Showing cached status'
+                  : 'Viewing cached cloud metrics (Updated $timeAgo)',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

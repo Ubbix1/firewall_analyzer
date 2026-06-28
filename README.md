@@ -68,13 +68,14 @@ python3 packet_server.py --port 8765 --no-packet-sniffing
 ```
 
 **Key Features:**
-- **Stateful Correlation**: Tracks attack stages over time via `EventCorrelationEngine`.
-- **Reputation-based Blocking**: Auto-drops persistent attackers.
-- **App Usage Monitoring**: Live `psutil` process monitoring for system overhead analysis.
-- **Public Protection**: Public web access is blocked with a premium "Restricted Access" UI.
-- **Telegram Admin**: Secure remote mitigation using the `/stop` command with PIN verification.
-- **Firebase**: Push notifications for critical security events.
+- **Authoritative Threat Model**: The backend performs all deep analysis, reputation scoring, and event correlation, while the mobile app acts as a real-time presentation layer.
+- **Stateful Event Correlation**: Tracks attack progression over time (Recon → Exploit) and identifies distributed attacks from multiple sources using the `EventCorrelationEngine`.
+- **IP Reputation & Scoring**: Assigns dynamic scores (0-200) to IPs based on threat severity. Scores decay over time to account for legitimate traffic.
+- **Active Mitigation**: Automatically blocks persistent attackers at the OS level (iptables on Linux, netsh on Windows) once they reach a reputation threshold of 150.
+- **Resource Management**: Implements multi-tier memory monitoring (Soft/Hard/Critical limits) with aggressive cache cleanup and emergency sniffer shutdown to maintain stability.
 - **Service Monitoring**: Real-time status for Docker, Caddy, Cloudflare, and Tailscale.
+- **Telegram Admin**: Secure remote mitigation using the `/stop` command with PIN verification.
+- **FCM Integration**: Real-time push notifications for critical security events and system alerts.
 
 **Connect from app:** Server Screen → Settings → Enter `ws://your-server:8765`
 

@@ -47,7 +47,7 @@ class AboutScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'VERSION 3.6.0',
+                'VERSION 3.7.1',
                 style: textTheme.labelSmall?.copyWith(
                   color: colorScheme.onSurfaceVariant.withOpacity(0.6),
                   letterSpacing: 2.0,

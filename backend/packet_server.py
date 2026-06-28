@@ -1171,7 +1171,6 @@ def get_cloud_status() -> Dict[str, Any]:
         "docker": "DOWN",
         "caddy": "DOWN",
         "cloudflare_tunnel": "DOWN",
-        "landing_page": "DOWN",
         "portainer": "DOWN",
         "tailscale": "DOWN",
         "public_domain": "DOWN",
@@ -1199,8 +1198,6 @@ def get_cloud_status() -> Dict[str, Any]:
                 status["caddy"] = "OK"
             if "cloudflared" in containers:
                 status["cloudflare_tunnel"] = "OK"
-            if "landing" in containers:
-                status["landing_page"] = "OK"
             if "portainer" in containers:
                 status["portainer"] = "OK"
     except Exception:
@@ -1605,6 +1602,7 @@ def send_firebase_notification(
     event_type: str = "battery",
     channel_id: str = "battery_alerts",
     extra_data: Optional[Dict[str, object]] = None,
+    silent: bool = False,
 ):
     """Send a Firebase Cloud Messaging notification"""
     if not FIREBASE_AVAILABLE or messaging is None:
@@ -1614,10 +1612,12 @@ def send_firebase_notification(
     try:
         payload_data = {
             'type': event_type,
-            'title': title,
-            'body': body,
             'level': level,
         }
+        if not silent:
+            payload_data['title'] = title
+            payload_data['body'] = body
+
         if extra_data:
             payload_data.update(
                 {
@@ -1627,27 +1627,33 @@ def send_firebase_notification(
                 }
             )
 
-        message = messaging.Message(
-            data=payload_data,
-            notification=messaging.Notification(
+        # Create notification only if not silent
+        notification = None
+        android_config = messaging.AndroidConfig(priority="high")
+        webpush_config = None
+
+        if not silent:
+            notification = messaging.Notification(
                 title=title,
                 body=body,
-            ),
-            android=messaging.AndroidConfig(
-                priority="high",
-                notification=messaging.AndroidNotification(
-                    channel_id=channel_id,
-                    sound="default",
-                ),
-            ),
-            # Support for Windows/Web clients via Webpush
-            webpush=messaging.WebpushConfig(
+            )
+            android_config.notification = messaging.AndroidNotification(
+                channel_id=channel_id,
+                sound="default",
+            )
+            webpush_config = messaging.WebpushConfig(
                 notification=messaging.WebpushNotification(
                     title=title,
                     body=body,
                     icon="notification_icon",
                 ),
-            ),
+            )
+
+        message = messaging.Message(
+            data=payload_data,
+            notification=notification,
+            android=android_config,
+            webpush=webpush_config,
             token=fcm_token,
         )
         
@@ -2380,12 +2386,8 @@ class PacketServer:
     def _perform_aggressive_cleanup(self) -> None:
         """Clear large non-essential caches to save memory."""
         cleared = False
-        # 1. Clear GeoIP cache if it's large
-        if len(geoip_cache) > 500:
-            geoip_cache.clear()
-            cleared = True
         
-        # 2. Clear reputation info for low-risk IPs
+        # 1. Clear reputation info for low-risk IPs
         keys_to_del = [ip for ip, data in ip_reputation.items() if data.get("score", 0) < 10.0]
         if len(keys_to_del) > 100:
             for ip in keys_to_del:
@@ -2410,18 +2412,29 @@ class PacketServer:
             print(f"Aggressive memory cleanup performed at {round(self.server_memory_mb, 1)}MB")
 
     def clear_server_database(self) -> None:
-        """Clear the events table in the server database to save space."""
+        """Clear the events table only if database exceeds 1GB."""
+        db_path = Path("firewall_insane.db")
+        if not db_path.exists():
+            return
+
         try:
-            # We use the existing db_queue to ensure thread-safety if possible, 
-            # but for a full purge a direct connection is cleaner.
-            conn = sqlite3.connect("firewall_insane.db")
+            # Convert size to GB
+            size_bytes = db_path.stat().st_size
+            size_gb = size_bytes / (1024 * 1024 * 1024)
+            
+            if size_gb < 1.0:
+                # Still plenty of space, keep the history
+                return
+
+            conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
             cursor.execute("DELETE FROM events")
+            cursor.execute("VACUUM") # Reclaim space
             conn.commit()
             conn.close()
-            print("🧹 Server database CLEARED (No active clients).")
+            print(f"🧹 Server database CLEARED ({size_gb:.2f} GB threshold reached).")
         except Exception as e:
-            print(f"Error clearing server database: {e}")
+            print(f"Error checking/clearing server database: {e}")
 
     def _extract_auth_params(self, target: str, headers: Optional[Dict[str, str]]) -> tuple[str, str, str, str]:
         headers = headers or {}
@@ -2618,12 +2631,8 @@ class PacketServer:
                 method, target, _version = parts
                 path = urlsplit(target).path or "/"
                 
-                if method != "GET":
-                    response = self.build_http_response(405, "Only GET is supported\n")
-                    status_code = 405
-                elif path in {"/", "/health", "/healthz"}:
-                    # Premium Forbidden HTML page
-                    html_content = """<!DOCTYPE html>
+                # Define fallback HTML content immediately
+                html_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2725,7 +2734,19 @@ class PacketServer:
     </div>
 </body>
 </html>"""
-                if path == "/status" and self.is_authorized_app_request(target, headers):
+
+                if method != "GET":
+                    response = self.build_http_response(405, "Only GET is supported\n")
+                    status_code = 405
+                elif path == "/status" and self.is_authorized_app_request(target, headers):
+                    body = json.dumps(self.build_status_payload(), indent=2) + "\n"
+                    response = self.build_http_response(
+                        200,
+                        body,
+                        content_type="application/json; charset=utf-8",
+                    )
+                elif (path == "/health" or path == "/healthz") and self.is_authorized_app_request(target, headers):
+                    # For authorized health checks, return JSON same as status
                     body = json.dumps(self.build_status_payload(), indent=2) + "\n"
                     response = self.build_http_response(
                         200,
@@ -2744,7 +2765,7 @@ class PacketServer:
                         content_type="application/json; charset=utf-8",
                     )
                 else:
-                    # Default: Show restricted access page for root, unknown paths, or unauthorized requests
+                    # Default fallback for unauthorized or root access
                     response = self.build_http_response(
                         200,
                         html_content,
@@ -3391,33 +3412,6 @@ class PacketServer:
                             f"MEM: {app['memoryUsage']}%"
                         )
                         self.threat_notification_cooldowns[app_key] = time.time()
-
-            # Periodically push status to FCM for background widget updates
-            # Every 15 minutes (900 seconds)
-            if FIREBASE_AVAILABLE:
-                last_push = getattr(self, "_last_widget_push", 0.0)
-                if time.time() - last_push > 900:
-                    self._last_widget_push = time.time()
-                    status = self.build_status_payload()
-                    containers = status.get('dockerContainers', [])
-                    running_docker = len([c for c in containers if c.get('state') == 'running'])
-                    total_docker = len(containers)
-                    
-                    for token in load_registered_fcm_tokens():
-                        send_firebase_notification(
-                            token,
-                            "Widget Update",
-                            "Background status sync",
-                            level="info",
-                            event_type="widget_update",
-                            extra_data={
-                                "battery": str(status["batteryPercent"]),
-                                "temp": str(status.get("cpuTemp") or ""),
-                                "ssh": str(status["sshConnections"]),
-                                "docker_running": str(running_docker),
-                                "docker_total": str(total_docker),
-                            }
-                        )
 
             payload = self.build_status_payload()
             await self.broadcast_json(payload)

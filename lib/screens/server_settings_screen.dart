@@ -68,15 +68,19 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
                 width: double.infinity,
                 color: controller.isSocketConnected
                     ? Colors.green
-                    : Colors.red,
+                    : (controller.isConnectingSocket || controller.isLoading
+                        ? Colors.orange
+                        : Colors.red),
                 padding: const EdgeInsets.all(12),
                 child: Text(
                   controller.isSocketConnected
-                      ? 'Server Connected'
-                      : 'Server Disconnected',
+                      ? 'System Online'
+                      : (controller.isConnectingSocket || controller.isLoading
+                          ? 'Synchronizing Metrics...'
+                          : 'Endpoint Unreachable'),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
@@ -95,76 +99,39 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Endpoint',
-                              style:
-                                  Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 8),
 
-                            TextField(
-                              controller: controller.urlController,
-                              decoration: const InputDecoration(
-                                labelText: 'Shared Server URL',
-                                hintText: 'wss://analyzer.plexaur.com',
-                                helperText:
-                                    'Use your shared server domain here.',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
+                             Text(
+                               'Permanent Endpoint',
+                               style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                 color: Theme.of(context).hintColor,
+                                 fontWeight: FontWeight.bold,
+                               ),
+                             ),
+                             const SizedBox(height: 8),
+                             TextField(
+                               controller: controller.urlController,
+                               readOnly: true,
+                               style: TextStyle(
+                                 fontWeight: FontWeight.bold,
+                                 fontFamily: 'monospace',
+                                 color: Theme.of(context).colorScheme.onSurface,
+                               ),
+                               decoration: InputDecoration(
+                                 prefixIcon: const Icon(Icons.cloud_done, color: Colors.blue),
+                                 filled: true,
+                                 fillColor: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+                                 border: const OutlineInputBorder(),
+                                 hintText: 'wss://analyzer.plexaur.com',
+                               ),
+                             ),
                             const SizedBox(height: 12),
 
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: controller.isLoading ||
-                                          controller.isConnectingSocket
-                                      ? null
-                                      : () => unawaited(
-                                            controller.connectAndSync(
-                                              onMessage: _showSnackBar,
-                                            ),
-                                          ),
-                                  icon: const Icon(Icons.refresh),
-                                  label: Text(
-                                    snapshot == null
-                                        ? 'Load Status'
-                                        : 'Reconnect',
-                                  ),
-                                ),
-
-                                OutlinedButton.icon(
-                                  onPressed:
-                                      controller.isLoading || currentUri == null
-                                          ? null
-                                          : () => unawaited(
-                                                controller.loadHttpSnapshot(
-                                                  onMessage: _showSnackBar,
-                                                ),
-                                              ),
-                                  icon: const Icon(
-                                      Icons.cloud_download_outlined),
-                                  label: const Text('HTTP Refresh'),
-                                ),
-
-                                ElevatedButton.icon(
-                                  onPressed: controller.isSocketConnected
-                                      ? () => unawaited(
-                                          controller.disconnect())
-                                      : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor:
-                                        Theme.of(context).colorScheme.error,
-                                    foregroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .onError,
-                                  ),
-                                  icon: const Icon(Icons.link_off),
-                                  label: const Text('Disconnect'),
-                                ),
-                              ],
+                            const SizedBox(height: 8),
+                            Text(
+                              'The system automatically synchronizes with the official security endpoint in real-time.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).hintColor,
+                              ),
                             ),
                           ],
                         ),
@@ -212,7 +179,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
                             _buildSettingRow(
                               context,
                               icon: Icons.access_time,
-                              label: 'Updated',
+                              label: 'Last Response',
                               value: updatedText,
                             ),
                           ],

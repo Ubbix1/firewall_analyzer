@@ -14,6 +14,8 @@ import 'services/database_helper.dart';
 import 'services/fcm_registration_service.dart';
 import 'services/notification_service.dart';
 import 'services/home_widget_service.dart';
+import 'services/connectivity_service.dart';
+import 'cache/cache_manager.dart';
 import 'firebase_options.dart';
 
 @pragma('vm:entry-point')
@@ -34,6 +36,10 @@ Future<void> main() async {
   if (defaultTargetPlatform == TargetPlatform.windows) {
     HttpOverrides.global = MyHttpOverrides();
   }
+
+  // Initialize Cache
+  await CacheManager.init();
+  
   runApp(const FirewallLogAnalyzerApp());
   
   // Defer everything else until after the first frame.

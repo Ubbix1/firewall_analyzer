@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../controllers/server_status_controller.dart';
+import '../widgets/connectivity_gate.dart';
 
 class UserClientScreen extends StatefulWidget {
   final ServerStatusController controller;
@@ -30,49 +31,54 @@ class _UserClientScreenState extends State<UserClientScreen> {
           final controller = widget.controller;
           final snapshot = controller.snapshot;
 
-          return ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Active Users (${snapshot?.activeClients.length ?? 0})',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      if (snapshot?.activeClients.isEmpty ?? true)
-                        const Text('No active users')
-                      else
-                        ...snapshot!.activeClients.map((client) => _buildClientRow(context, client)),
-                    ],
+          return ConnectivityGate(
+            controller: widget.controller,
+            child: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [
+                if (widget.controller.isUsingCache || widget.controller.isOffline)
+                  _buildOfflineIndicator(context),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Active Users (${snapshot?.activeClients.length ?? 0})',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        if (snapshot?.activeClients.isEmpty ?? true)
+                          const Text('No active users')
+                        else
+                          ...snapshot!.activeClients.map((client) => _buildClientRow(context, client)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Registered Devices (${snapshot?.registeredDevices.length ?? 0})',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      if (snapshot?.registeredDevices.isEmpty ?? true)
-                        const Text('No registered devices')
-                      else
-                        ...snapshot!.registeredDevices.map((device) => _buildClientRow(context, device, isActive: false)),
-                    ],
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Registered Devices (${snapshot?.registeredDevices.length ?? 0})',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        if (snapshot?.registeredDevices.isEmpty ?? true)
+                          const Text('No registered devices')
+                        else
+                          ...snapshot!.registeredDevices.map((device) => _buildClientRow(context, device, isActive: false)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -151,4 +157,39 @@ class _UserClientScreenState extends State<UserClientScreen> {
       ),
     );
   }
-}
+
+  Widget _buildOfflineIndicator(BuildContext context) {
+    final isOffline = widget.controller.isOffline;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isOffline ? Colors.red.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isOffline ? Icons.cloud_off : Icons.history,
+            color: Colors.white,
+            size: 16,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              isOffline
+                  ? 'Server Offline - Showing cached status'
+                  : 'Viewing cached device metrics',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

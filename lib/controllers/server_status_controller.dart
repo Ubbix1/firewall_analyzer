@@ -17,6 +17,10 @@ import '../services/server_status_parser.dart';
 import '../services/server_status_service.dart';
 import '../services/websocket_url_helper.dart';
 import '../services/websocket_url_store.dart';
+import '../repositories/server_repository.dart';
+import '../repositories/modules_repositories.dart';
+import '../services/connectivity_service.dart';
+import '../cache/cache_manager.dart';
 
 class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver {
   static const _retryDelay = Duration(seconds: 10);
@@ -27,16 +31,48 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
   ServerStatusController({
     String initialWebSocketUrl = '',
     ServerStatusService? statusService,
+    ServerRepository? serverRepository,
+    DevicesRepository? devicesRepository,
+    SCloudRepository? scloudRepository,
+    ConnectivityService? connectivityService,
   })  : _initialWebSocketUrl = initialWebSocketUrl,
         _statusService = statusService ?? ServerStatusService(),
-        urlController = TextEditingController(text: initialWebSocketUrl) {
+        _serverRepository = serverRepository ?? ServerRepository(),
+        _devicesRepository = devicesRepository ?? DevicesRepository(),
+        _scloudRepository = scloudRepository ?? SCloudRepository(),
+        _connectivityService = connectivityService ?? ConnectivityService(),
+        urlController = TextEditingController() {
+    urlController.text = initialWebSocketUrl.isNotEmpty ? initialWebSocketUrl : defaultWebSocketUrl;
+    
+    // 1. Synchronous Cache Load for Instant-On
+    final cachedJson = CacheManager.getServerStatus();
+    if (cachedJson != null) {
+      debugPrint('📦 Initializing with persistent local cache');
+      try {
+        _snapshot = ServerStatusSnapshot.fromJson(cachedJson);
+        _isUsingCache = true;
+        _statusMessage = 'Showing cached status';
+        _isLoading = false; // Cache found, skip skeleton
+      } catch (e) {
+        debugPrint('⚠️ Error loading initial cache: $e');
+        _isLoading = true; // Cache corrupted, show skeleton
+      }
+    } else {
+      _isLoading = true; // No cache, show skeleton
+    }
+
     urlController.addListener(_handleUrlChanged);
+    _connectivityService.addListener(_handleConnectivityChanged);
     WidgetsBinding.instance.addObserver(this);
     unawaited(_loadSavedConfig());
   }
 
   final String _initialWebSocketUrl;
   final ServerStatusService _statusService;
+  final ServerRepository _serverRepository;
+  final DevicesRepository _devicesRepository;
+  final SCloudRepository _scloudRepository;
+  final ConnectivityService _connectivityService;
   final TextEditingController urlController;
 
   WebSocketChannel? _channel;
@@ -54,19 +90,33 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
   bool _shouldReconnect = false;
   String _statusMessage = 'Idle';
 
+  // Offline/Cache flags
+  bool _isUsingCache = false;
+  bool get isUsingCache => _isUsingCache;
+  bool get isOffline => !_connectivityService.isOnline;
+  bool get hasInternet => _connectivityService.hasInternet;
+  DateTime? get lastCacheUpdate => _serverRepository.lastUpdated;
+
   bool _isMemoryCritical = false;
   String? _serverMemoryWarning;
+  DateTime? _lastLiveSyncUpdate;
 
   List<String> get urlOptions => _urlOptions;
   ServerStatusSnapshot? get snapshot => _snapshot;
   List<AppUsage> get appUsage => _appUsage;
-  bool get isLoading => _isLoading;
+  bool get isLoading => _isLoading || _isConnectingSocket;
   bool get isConnectingSocket => _isConnectingSocket;
   bool get isSocketConnected => _isSocketConnected;
   String get statusMessage => _statusMessage;
   bool get isMemoryCritical => _isMemoryCritical;
   String? get serverMemoryWarning => _serverMemoryWarning;
-  Uri? get currentUri => parseWebSocketUri(urlController.text.trim());
+  DateTime? get lastLiveSyncUpdate => _lastLiveSyncUpdate;
+  Uri? get currentUri {
+    final text = urlController.text.trim();
+    if (text.isEmpty) return parseWebSocketUri(defaultWebSocketUrl);
+    return parseWebSocketUri(text);
+  }
+
   Uri? get statusUri =>
       currentUri == null ? null : statusUriForWebSocketUri(currentUri!);
 
@@ -76,10 +126,10 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
   }
 
   Future<void> connectAndSync({ValueChanged<String>? onMessage}) async {
-    final input = urlController.text.trim();
+    var input = urlController.text.trim();
     if (input.isEmpty) {
-      onMessage?.call('Enter the shared server URL first.');
-      return;
+      input = defaultWebSocketUrl;
+      urlController.text = input;
     }
 
     final websocketUri = parseWebSocketUri(input);
@@ -113,35 +163,28 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
       return;
     }
 
-    _isLoading = true;
+    _isLoading = _snapshot == null;
     _isConnectingSocket = true;
-    _statusMessage = 'Syncing $nextStatusUrl and opening live status feed';
-    urlController.text = websocketUrl;
-    _urlOptions = _buildUrlOptions(
-      savedUrl: websocketUrl,
-      recentUrls: recentUrls,
-      currentUrl: websocketUrl,
-    );
+    _statusMessage = 'Syncing $nextStatusUrl...';
     _notifySafely();
 
-    final phoneHint = webSocketPhoneAccessHint(websocketUri);
-    if (phoneHint.isNotEmpty) {
-      onMessage?.call(phoneHint);
-    }
-
-    await _connectStatusWebSocket(websocketUri);
-
-    if (!_isSocketConnected && !_isDisposed) {
-      await _loadStatusSnapshot(nextStatusUri, onMessage: onMessage);
-    }
+    // Run WebSocket connection and HTTP fetch in parallel for instant-on behavior
+    final wsFuture = _connectStatusWebSocket(websocketUri);
+    final httpFuture = _loadStatusSnapshot(nextStatusUri, onMessage: onMessage);
+    
+    unawaited(wsFuture);
+    await httpFuture;
+    
+    _isLoading = false;
+    _notifySafely();
   }
 
   Future<void> loadHttpSnapshot({ValueChanged<String>? onMessage}) async {
-    final nextStatusUri = statusUri;
-    if (nextStatusUri == null) {
-      onMessage?.call('Enter a valid WebSocket URL first.');
-      return;
+    if (urlController.text.trim().isEmpty) {
+      urlController.text = defaultWebSocketUrl;
     }
+    final nextStatusUri = statusUri;
+    if (nextStatusUri == null) return;
 
     if (_isSocketConnected && _channel != null) {
       _statusMessage = 'Requesting live refresh via WebSocket';
@@ -265,6 +308,17 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
   }
 
   Future<void> _loadSavedConfig() async {
+    // 1. Load from cache immediately for instant-on behavior
+    final cachedData = _serverRepository.latestSnapshot ?? 
+        (CacheManager.getServerStatus() != null ? ServerStatusSnapshot.fromJson(CacheManager.getServerStatus()!) : null);
+    
+    if (cachedData != null) {
+      _snapshot = cachedData;
+      _isUsingCache = true;
+      _statusMessage = 'Showing cached status';
+      _notifySafely();
+    }
+
     final initialUrl = _initialWebSocketUrl.trim();
     if (initialUrl.isNotEmpty) {
       await WebSocketUrlStore.save(initialUrl);
@@ -272,17 +326,15 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
 
     final savedUrl =
         initialUrl.isNotEmpty ? initialUrl : await WebSocketUrlStore.load();
-    final validSavedUrl = () {
-      final parsed = parseWebSocketUri(savedUrl);
-      return parsed != null ? savedUrl : defaultWebSocketUrl;
-    }();
+    final validSavedUrl = defaultWebSocketUrl;
     final recentUrls = await WebSocketUrlStore.loadRecent();
     
     if (_isDisposed) return;
     
-    if (urlController.text.trim().isEmpty && validSavedUrl.isNotEmpty) {
-      urlController.text = validSavedUrl;
-    }
+    if (_isDisposed) return;
+    
+    // Always ensure the controller has the permanent URL
+    urlController.text = defaultWebSocketUrl;
     
     _urlOptions = _buildUrlOptions(
       savedUrl: validSavedUrl,
@@ -290,17 +342,19 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
       currentUrl: urlController.text.trim(),
     );
 
-    _urlOptions = _buildUrlOptions(
-      savedUrl: validSavedUrl,
-      recentUrls: recentUrls,
-      currentUrl: urlController.text.trim(),
-    );
+    // 2. Start sync automatically
+    unawaited(connectAndSync());
+    _notifySafely();
+  }
+
+  void _handleConnectivityChanged() {
+    if (_isDisposed) return;
+    
+    if (_connectivityService.isOnline && _shouldReconnect && !_isSocketConnected && !_isConnectingSocket) {
+      connectAndSync();
+    }
     
     _notifySafely();
-
-    if (!_isLoading && urlController.text.trim().isNotEmpty) {
-      unawaited(connectAndSync());
-    }
   }
 
   Future<void> _loadStatusSnapshot(
@@ -316,6 +370,12 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
       }
 
       _snapshot = nextSnapshot;
+      _isUsingCache = false;
+      _lastLiveSyncUpdate = DateTime.now();
+      await _serverRepository.updateFromLive(nextSnapshot);
+      await _devicesRepository.updateCache(nextSnapshot.registeredDevices);
+      await _scloudRepository.updateCache(nextSnapshot.cloudStatus);
+      
       _isLoading = false;
       _statusMessage = _isSocketConnected
           ? 'Live sync active on ${urlController.text.trim()}'
@@ -330,6 +390,14 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
       _statusMessage = _isSocketConnected
           ? 'Live sync active. HTTP refresh failed: $error'
           : 'Status request failed: $error';
+      
+      // Fallback to health endpoint if it wasn't already tried
+      if (!nextStatusUrl.contains('/health') && !_isSocketConnected) {
+        final healthUri = nextStatusUri.replace(path: '/health');
+        debugPrint('🔍 Retrying with health endpoint: $healthUri');
+        unawaited(_loadStatusSnapshot(healthUri));
+      }
+      
       _notifySafely();
       onMessage?.call('Unable to load server status from $nextStatusUrl');
     }
@@ -356,6 +424,7 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
               _serverMemoryWarning = decoded['message'];
               _isMemoryCritical = isCritical;
             }
+
             _notifySafely();
             return;
           }
@@ -372,6 +441,12 @@ class ServerStatusController extends ChangeNotifier with WidgetsBindingObserver 
             return;
           }
           _snapshot = nextSnapshot;
+          _isUsingCache = false;
+          _lastLiveSyncUpdate = DateTime.now();
+          unawaited(_serverRepository.updateFromLive(nextSnapshot));
+          unawaited(_devicesRepository.updateCache(nextSnapshot.registeredDevices));
+          unawaited(_scloudRepository.updateCache(nextSnapshot.cloudStatus));
+
           _statusMessage = 'Live sync active on $websocketUrl';
           _notifySafely();
         },

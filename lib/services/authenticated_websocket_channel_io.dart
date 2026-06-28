@@ -16,7 +16,7 @@ Future<WebSocketChannel> connectAuthenticatedWebSocket(Uri uri) async {
   );
   
   // Add a standard User-Agent to help with server-side filtering/identification
-  headers['User-Agent'] = 'FirewallLogAnalyzer/3.5.0 (Windows)';
+  headers['User-Agent'] = 'FirewallLogAnalyzer/3.5.0 (Mobile)';
   
   try {
     // Using WebSocket.connect directly gives us more control on Windows

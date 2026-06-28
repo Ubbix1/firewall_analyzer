@@ -25,6 +25,9 @@ import '../widgets/dashboard_dialog.dart';
 import '../widgets/filter_sort_dialog.dart';
 import '../widgets/log_list_view.dart';
 import '../widgets/recent_files_view.dart';
+import '../repositories/server_repository.dart';
+import '../repositories/modules_repositories.dart';
+import '../services/connectivity_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final ThemeMode themeMode;
@@ -60,7 +63,12 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _serverStatusController = ServerStatusController();
+    _serverStatusController = ServerStatusController(
+      serverRepository: ServerRepository(),
+      devicesRepository: DevicesRepository(),
+      scloudRepository: SCloudRepository(),
+      connectivityService: ConnectivityService(),
+    );
     _ctrl = HomeScreenController(
       databaseHelper: widget.databaseHelper,
       geoIpService: widget.geoIpService,

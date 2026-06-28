@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
+import '../widgets/connectivity_gate.dart';
 
 import '../controllers/server_status_controller.dart';
 import '../models/server_status_snapshot.dart';
@@ -30,52 +31,22 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
         final isLoading = widget.controller.isLoading;
 
         if (snapshot == null) {
-          if (isLoading) {
-            return _buildSkeleton(context);
-          }
-
-          return Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.settings_input_antenna,
-                      size: 56,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Use the top-right settings icon to open Server Settings, connect to your endpoint, and load server metrics.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: widget.onOpenSettings,
-                      icon: const Icon(Icons.settings),
-                      label: const Text('Open Settings'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
+          return _buildSkeleton(context);
         }
 
-        return Column(
-          children: [
-            Expanded(
-              child: ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
-            _buildStatusCard(context, snapshot),
-            const SizedBox(height: 16),
-            _buildBatteryCard(context, snapshot),
-            _buildSectionTitle('Server'),
+        return ConnectivityGate(
+          controller: widget.controller,
+          child: Stack(
+            children: [
+              ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  if (widget.controller.isUsingCache || widget.controller.isOffline)
+                    _buildOfflineIndicator(context),
+                  _buildStatusCard(context, snapshot),
+                  const SizedBox(height: 16),
+                  _buildBatteryCard(context, snapshot),
+                  _buildSectionTitle('Server'),
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
@@ -111,6 +82,20 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
                   label: 'Clients',
                   value: '${snapshot.connectedClients}',
                   color: Colors.purple,
+                ),
+                _buildModernStatCard(
+                  context,
+                  icon: Icons.bug_report,
+                  label: 'Threat Activity',
+                  value: '${snapshot.uniqueSourceIps} Unique IPs',
+                  color: Colors.red,
+                ),
+                _buildModernStatCard(
+                  context,
+                  icon: Icons.lan,
+                  label: 'TCP / UDP',
+                  value: '${snapshot.activeTcpConnections} / ${snapshot.udpConnections}',
+                  color: Colors.indigo,
                 ),
               ],
             ),
@@ -203,11 +188,11 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
             _buildSectionTitle('App Usage (Top Processes)'),
             _buildAppUsageList(context),
             const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    ],
-  );
+                ],
+              ),
+            ],
+          ),
+        );
       },
     );
   }
@@ -253,7 +238,7 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
             childAspectRatio: 1.6,
-            children: List.generate(4, (index) => _buildSkeletonMetricCard()),
+            children: List.generate(6, (index) => _buildSkeletonMetricCard()),
           ),
           const SizedBox(height: 24),
           _buildSkeletonSectionTitle(),
@@ -311,8 +296,23 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
     BuildContext context,
     ServerStatusSnapshot snapshot,
   ) {
-    final updatedText =
-        DateFormat.yMMMd().add_Hms().format(snapshot.receivedAt.toLocal());
+    final isConnecting = widget.controller.isConnectingSocket;
+    final isLive = widget.controller.isSocketConnected;
+    final lastSync = widget.controller.lastLiveSyncUpdate;
+    final lastCache = widget.controller.lastCacheUpdate;
+
+    String getTimeAgo(DateTime? dateTime) {
+      if (dateTime == null) return 'Never';
+      final diff = DateTime.now().difference(dateTime);
+      if (diff.inSeconds < 30) return 'just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      return DateFormat.Hm().format(dateTime);
+    }
+
+    // Determine badge color and text
+    final Color statusColor = isLive ? Colors.green : (isConnecting ? Colors.blue : Colors.orange);
+    final String statusLabel = isLive ? 'LIVE' : (isConnecting ? 'SYNCING' : 'CACHED');
 
     return Card(
       child: Padding(
@@ -329,38 +329,133 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                 ),
-                if (widget.controller.isSocketConnected)
-                  _PulseIndicator(color: Colors.blue),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: statusColor.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isLive || isConnecting) 
+                        _PulseIndicator(color: statusColor, size: 6)
+                      else 
+                        const Icon(Icons.history, size: 10, color: Colors.orange),
+                      const SizedBox(width: 6),
+                      Text(
+                        statusLabel,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
-            _buildSettingRow(
+            const SizedBox(height: 20),
+            _buildStatusRow(
               context,
-              icon: widget.controller.isSocketConnected
-                  ? Icons.sync
-                  : Icons.sync_disabled,
-              label: 'Connection Status',
-              value: widget.controller.statusMessage,
-              trailing: widget.controller.isSocketConnected 
-                  ? Text(
-                      'Live',
-                      style: TextStyle(
-                        color: Colors.blue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    )
-                  : null,
+              icon: isLive ? Icons.check_circle : (isConnecting ? Icons.sync : Icons.cloud_off),
+              label: 'System Status',
+              value: isLive ? 'Synchronized' : (isConnecting ? 'Connecting...' : 'Offline / Viewing Cache'),
+              color: statusColor,
             ),
             const SizedBox(height: 12),
-            _buildSettingRow(
+            _buildStatusRow(
               context,
               icon: Icons.access_time,
-              label: 'Last Snapshot',
-              value: updatedText,
+              label: 'Last Update',
+              value: isLive ? 'Active now' : getTimeAgo(lastSync ?? lastCache),
+              color: isLive ? Colors.blue : Colors.grey,
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: color?.withOpacity(0.7) ?? Theme.of(context).hintColor),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).hintColor,
+                fontSize: 10,
+              ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: color,
+                fontSize: 10,
+              ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOfflineIndicator(BuildContext context) {
+    final isOffline = widget.controller.isOffline;
+    final lastUpdate = widget.controller.lastCacheUpdate;
+    final timeAgo = lastUpdate != null
+        ? DateFormat.Hm().format(lastUpdate)
+        : 'Unknown';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      color: isOffline ? Colors.red.withOpacity(0.9) : Colors.orange.withOpacity(0.9),
+      child: Row(
+        children: [
+          Icon(
+            isOffline ? Icons.cloud_off : Icons.history,
+            color: Colors.white,
+            size: 16,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              isOffline
+                  ? 'Server Offline - Showing cached status'
+                  : 'Viewing cached metrics (Updated $timeAgo)',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          if (isOffline)
+            TextButton(
+              onPressed: () => widget.controller.connectAndSync(),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(50, 30),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('RETRY', style: TextStyle(fontSize: 11)),
+            ),
+        ],
       ),
     );
   }
@@ -1025,7 +1120,8 @@ class _ServerStatusScreenState extends State<ServerStatusScreen> {
 
 class _PulseIndicator extends StatefulWidget {
   final Color color;
-  const _PulseIndicator({required this.color});
+  final double size;
+  const _PulseIndicator({required this.color, this.size = 8});
 
   @override
   State<_PulseIndicator> createState() => _PulseIndicatorState();
@@ -1055,8 +1151,8 @@ class _PulseIndicatorState extends State<_PulseIndicator> with SingleTickerProvi
       animation: _controller,
       builder: (context, child) {
         return Container(
-          width: 8,
-          height: 8,
+          width: widget.size,
+          height: widget.size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: widget.color.withOpacity(1.0 - _controller.value),

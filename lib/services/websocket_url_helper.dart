@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart';
 
 const String defaultWebSocketUrl = 'wss://analyzer.plexaur.com';
 const String defaultServerIp = '192.168.29.77';
-const String defaultStatusUrl = 'https://analyzer.plexaur.com/status';
+const String defaultStatusUrl = 'https://analyzer.plexaur.com/health';
 const String _appAccessToken = String.fromEnvironment('APP_ACCESS_TOKEN', defaultValue: '');
 
 String get appAccessToken => _appAccessToken.trim();
@@ -93,7 +93,7 @@ Uri statusUriForWebSocketUri(Uri uri) {
       scheme: scheme,
       userInfo: normalizedUri.userInfo,
       host: normalizedUri.host,
-      port: port,
+      port: (port == 0 || (scheme == 'https' && port == 443) || (scheme == 'http' && port == 80)) ? null : port,
       path: path,
     ),
   );
@@ -144,9 +144,9 @@ String _normalizeWebSocketPath(String path) {
 String _statusPathForWebSocketPath(String path) {
   final normalizedPath = _normalizeWebSocketPath(path);
   if (normalizedPath.isEmpty) {
-    return '/status';
+    return '/health';
   }
-  return '${_trimTrailingSlash(normalizedPath)}/status';
+  return '${_trimTrailingSlash(normalizedPath)}/health';
 }
 
 String _trimTrailingSlash(String value) {
@@ -161,9 +161,9 @@ bool _isStatusPath(String path) {
   return normalized == '/status' || normalized.endsWith('/status');
 }
 
-int _statusPortForWebSocketUri(Uri uri, String scheme) {
+int? _statusPortForWebSocketUri(Uri uri, String scheme) {
   if (!uri.hasPort) {
-    return 0;
+    return null;
   }
 
   if (uri.port == 8765) {
@@ -172,8 +172,8 @@ int _statusPortForWebSocketUri(Uri uri, String scheme) {
 
   final isDefaultHttpPort = scheme == 'http' && uri.port == 80;
   final isDefaultHttpsPort = scheme == 'https' && uri.port == 443;
-  if (isDefaultHttpPort || isDefaultHttpsPort) {
-    return 0;
+  if (isDefaultHttpPort || isDefaultHttpsPort || uri.port == 0) {
+    return null;
   }
 
   return uri.port;
